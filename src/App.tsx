@@ -156,19 +156,17 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const unsub = onAuthStateChanged(auth, async (u) => {
+      const unsub = onAuthStateChanged(auth, (u) => {
         setUser(u);
         if (u) {
-          try {
-            await setDoc(doc(db, "users", u.uid), {
-              email: u.email,
-              displayName: u.displayName,
-              photoURL: u.photoURL,
-              last_login: Date.now()
-            }, { merge: true });
-          } catch (err) {
+          setDoc(doc(db, "users", u.uid), {
+            email: u.email,
+            displayName: u.displayName,
+            photoURL: u.photoURL,
+            last_login: Date.now()
+          }, { merge: true }).catch((err) => {
             console.error("Error saving user doc:", err);
-          }
+          });
         }
         setLoading(false);
       });
@@ -253,6 +251,30 @@ export default function App() {
           </svg>
           {t.loginBtn}
         </button>
+
+        {/* Global Toast for Logged-Out Screen */}
+        {toastMessage && (
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-100 animate-in slide-in-from-bottom-2 fade-in duration-300">
+            <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl shadow-xl border backdrop-blur-md max-w-[90vw] ${
+              toastMessage.type === 'error'
+                ? 'bg-red-50/90 dark:bg-red-900/90 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+                : 'bg-green-50/90 dark:bg-green-900/90 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+            }`}>
+              {toastMessage.type === 'error' ? (
+                <AlertCircle className="w-5 h-5 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+              )}
+              <p className="text-sm font-medium">{toastMessage.msg}</p>
+              <button
+                onClick={() => setToastMessage(null)}
+                className="ml-2 p-1 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
