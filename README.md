@@ -94,7 +94,20 @@ Opens at http://localhost:3000 (full-stack: Express + Vite middleware). Port 300
 
 ## Deployment
 
-Currently disabled.
+This project deploys as a Cloudflare Worker with static assets and Worker API
+routes. Configure the Worker variable `GEMINI_API_KEY` as a secret, then run:
+
+```bash
+npm run deploy
+```
+
+The Worker serves the Vite build from `dist/` and handles:
+
+- `POST /api/parse-audio`
+- `POST /api/parse-text`
+
+Do not deploy this project as a static-only site. The `functions/` directory is
+for Cloudflare Pages and is not used when deploying a `workers.dev` Worker.
 
 ## Project Structure
 
