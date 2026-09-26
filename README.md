@@ -21,7 +21,7 @@ A voice-first Progressive Web App for personal expense tracking, designed for th
 - **Known brand list** built into the prompt covers Indonesian fast food, restaurant chains, cafes, minimarkets, supermarkets, transport, and marketplaces — so misheard names get corrected.
 - Recognizes Indonesian payment methods (`Cash`, `QRIS`, `Transfer`, `GoPay`, `OVO`, `DANA`, `ShopeePay`, `Kartu`, `Paylater`).
 - Lenient confidence calibration — partial info still fills the response with best-effort.
-- Model fallback chain: `gemini-3.1-flash-lite` → `gemini-3.5-flash` → `gemini-3-flash` → `gemini-2.5-flash` → `gemini-2.5-flash-lite` → `gemini-2.0-flash` → `gemini-1.5-flash` (auto-retries on 503 / quota errors).
+- Model fallback chain: `gemini-3.5-flash-lite` → `gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.0-flash` → `gemini-2.5-flash` (auto-retries on 503 / quota errors).
 
 ### Views
 - **Home (Catat)** — Today's total, last 3 transactions, save toast with Edit / Undo (5s window).
