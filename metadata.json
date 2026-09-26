@@ -1,0 +1,10 @@
+{
+  "name": "Qicau",
+  "description": "Voice-based personal expense tracking in Indonesian",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
