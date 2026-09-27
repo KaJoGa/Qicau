@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "demo-qicau-test"
+    "default": "demo-qicau-test",
+    "prod": "big-elysium-496003-j7"
   }
 }
