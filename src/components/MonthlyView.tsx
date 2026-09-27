@@ -69,6 +69,9 @@ export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(num);
   };
 
+  const now = new Date();
+  const currentMonthLabel = `${t.monthLabels[now.getMonth() as keyof typeof t.monthLabels]} ${now.getFullYear()}`;
+
   const sortedCats = Object.entries(catTotals).sort((a: [string, number], b: [string, number]) => b[1] - a[1]);
   
   const pieData = sortedCats.map(([name, value]) => ({
@@ -80,8 +83,11 @@ export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between gap-3 mb-6">
-        <h2 className="text-2xl font-bold text-neutral-900 dark:text-white">
-          {filterMode === "monthly" ? t.thisMonthSummary : "Ringkasan Minggu Ini"}
+        <h2 className="text-2xl font-bold text-neutral-900 dark:text-white flex items-baseline gap-2 flex-wrap">
+          <span>{filterMode === "monthly" ? t.thisMonthSummary : "Ringkasan Minggu Ini"}</span>
+          {filterMode === "monthly" && (
+            <span className="text-sm font-normal text-neutral-400 dark:text-neutral-500">{currentMonthLabel}</span>
+          )}
         </h2>
         <button
           onClick={() => setFilterMode(filterMode === "monthly" ? "weekly" : "monthly")}

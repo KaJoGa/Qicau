@@ -68,7 +68,7 @@
       ]
     },
     {
-      "name": "Ringkasan Bulanan",
+      "name": "Ringkasan",
       "short_name": "Ringkasan",
       "description": "Statistik dan grafik pengeluaran",
       "url": "/?tab=monthly",

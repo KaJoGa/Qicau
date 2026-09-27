@@ -6,7 +6,7 @@ export const dict = {
     loginBtn: "Lanjutkan dengan Google",
     tabRecord: "Catat",
     tabHistory: "Riwayat",
-    tabMonthly: "Bulanan",
+    tabMonthly: "Ringkasan",
     todayExpenses: "Pengeluaran Hari Ini",
     tapToSpeak: "Ketuk untuk Bicara",
     listening: "Mendengarkan...",
