@@ -44,11 +44,8 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
       constraints.push(where("created_at", ">=", now - 7 * 24 * 60 * 60 * 1000));
     } else if (filterDate === "30d") {
       constraints.push(where("created_at", ">=", now - 30 * 24 * 60 * 60 * 1000));
-    } else if (filterDate === "this_month") {
-      const d = new Date();
-      d.setDate(1);
-      d.setHours(0, 0, 0, 0);
-      constraints.push(where("created_at", ">=", d.getTime()));
+    } else if (filterDate === "3m") {
+      constraints.push(where("created_at", ">=", now - 90 * 24 * 60 * 60 * 1000));
     }
     constraints.push(orderBy("created_at", "desc"));
     return constraints;
@@ -304,7 +301,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
             className="flex items-center justify-between gap-1.5 bg-white/40 dark:bg-neutral-900/40 backdrop-blur-sm border border-neutral-200/50 dark:border-neutral-800/50 hover:bg-white/60 dark:hover:bg-neutral-900/60 transition-colors rounded-lg px-2.5 py-2 shrink-0 text-sm text-neutral-900 dark:text-neutral-300 w-[130px]"
           >
             <span className="truncate">
-              {filterDate === "All" ? "Semua Waktu" : filterDate === "7d" ? "7 Hari Terakhir" : filterDate === "30d" ? "30 Hari Terakhir" : "Bulan Ini"}
+              {filterDate === "All" ? "Semua Waktu" : filterDate === "7d" ? "7 Hari Terakhir" : filterDate === "30d" ? "30 Hari Terakhir" : "3 Bulan Terakhir"}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400 shrink-0" />
           </button>
@@ -317,7 +314,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
                   { value: "All", label: "Semua Waktu" },
                   { value: "7d", label: "7 Hari Terakhir" },
                   { value: "30d", label: "30 Hari Terakhir" },
-                  { value: "this_month", label: "Bulan Ini" }
+                  { value: "3m", label: "3 Bulan Terakhir" }
                 ].map((opt) => (
                   <button
                     key={opt.value}
