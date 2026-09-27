@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { User } from "firebase/auth";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, documentId, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { Transaction } from "../types";
+import { dayIdFromTimestamp } from "../lib/dailySummary";
 import { getCategoryIcon } from "./HomeView";
 import { dict } from "../lib/i18n";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -35,23 +35,29 @@ export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
       start.setHours(0, 0, 0, 0);
     }
 
+    // daily_summaries doc ids are `${uid}_${YYYYMMDD}`, so a plain documentId()
+    // range query stays scoped to this user's days without needing a composite index.
+    const startId = `${user.uid}_${dayIdFromTimestamp(start.getTime())}`;
+    const endId = `${user.uid}_${dayIdFromTimestamp(Date.now())}`;
+
     const q = query(
-      collection(db, "transactions"),
-      where("user_id", "==", user.uid),
-      where("created_at", ">=", start.getTime())
+      collection(db, "daily_summaries"),
+      where(documentId(), ">=", startId),
+      where(documentId(), "<=", endId)
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      const txs = snap.docs.map(d => d.data() as Transaction);
-      
       let tot = 0;
       const cats: Record<string, number> = {};
-      
-      txs.forEach(t => {
-        tot += t.harga;
-        cats[t.kategori] = (cats[t.kategori] || 0) + t.harga;
+
+      snap.docs.forEach(d => {
+        const summary = d.data() as { total: number; by_category?: Record<string, number> };
+        tot += summary.total || 0;
+        Object.entries(summary.by_category || {}).forEach(([kategori, amount]) => {
+          cats[kategori] = (cats[kategori] || 0) + amount;
+        });
       });
-      
+
       setTotalExpenses(tot);
       setCatTotals(cats);
     });

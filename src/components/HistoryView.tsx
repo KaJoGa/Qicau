@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { User } from "firebase/auth";
 import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { bumpDailySummary } from "../lib/dailySummary";
 import { Transaction } from "../types";
 import { getCategoryIcon } from "./HomeView";
 import { Trash2, Loader2, RefreshCw, Filter, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
@@ -111,6 +112,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
   const handleDeleteConfirm = async () => {
     if (txToDelete) {
       setIsDeleting(true);
+      const deletedTx = transactions.find(tx => tx.id === txToDelete);
       try {
         await deleteDoc(doc(db, "transactions", txToDelete));
         // Manually remove from local state since onSnapshot only tracks first page
@@ -118,6 +120,9 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
         setTxToDelete(null);
         if (selectedTx && selectedTx.id === txToDelete) {
           setSelectedTx(null);
+        }
+        if (deletedTx) {
+          bumpDailySummary(user.uid, deletedTx.created_at, deletedTx.kategori, deletedTx.harga, -1);
         }
       } catch (e) {
         console.error("Gagal menghapus transaksi", e);
