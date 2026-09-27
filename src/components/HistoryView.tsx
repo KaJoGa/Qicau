@@ -14,10 +14,12 @@ interface HistoryViewProps {
   isExporting: boolean;
   onExport: () => void;
   onForceReset: () => void;
+  isRebuildingSummaries: boolean;
+  onRebuildSummaries: () => void;
   showToast: (msg: string, type?: 'success'|'error') => void;
 }
 
-export function HistoryView({ user, t, isExporting, onExport, onForceReset, showToast }: HistoryViewProps) {
+export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRebuildingSummaries, onRebuildSummaries, showToast }: HistoryViewProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -223,6 +225,14 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
         </h2>
         {transactions.length > 0 && (
           <div className="flex flex-col-reverse sm:flex-row items-end sm:items-center gap-2">
+            <button
+              onClick={onRebuildSummaries}
+              disabled={isRebuildingSummaries}
+              title="Bangun ulang ringkasan harian (dipakai halaman Bulanan) dari seluruh riwayat"
+              className={`text-xs bg-neutral-100 hover:bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:text-neutral-300 py-1.5 px-3 rounded-lg transition-colors border border-neutral-200 dark:border-neutral-700 flex items-center justify-center min-w-[90px] w-full sm:w-auto ${isRebuildingSummaries ? 'opacity-80 cursor-not-allowed' : ''}`}
+            >
+              {isRebuildingSummaries ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Rebuild Ringkasan"}
+            </button>
             <button
               onClick={onForceReset}
               disabled={isExporting}

@@ -9,6 +9,7 @@ import { NotebookPen, History, BarChart3, Settings, Mic, Database, LogOut, Sun, 
 import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
 import { syncToSheets } from "./lib/sheetsSync";
+import { rebuildAllDailySummaries } from "./lib/dailySummary";
 import { PWAInstallButton } from "./components/PWAInstallButton";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { PWAUpdatePrompt } from "./components/PWAUpdatePrompt";
@@ -19,6 +20,7 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<"home" | "history" | "monthly">("home");
   const [showSettings, setShowSettings] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRebuildingSummaries, setIsRebuildingSummaries] = useState(false);
   const [toastMessage, setToastMessage] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const t = dict.id;
 
@@ -122,6 +124,26 @@ export default function App() {
       showToast("Gagal reset sinkronisasi.", 'error');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const rebuildSummaries = async () => {
+    if (!user || isRebuildingSummaries) return;
+    if (!navigator.onLine) {
+      showToast("Anda sedang offline. Silakan sambungkan internet untuk membangun ulang ringkasan.", "error");
+      return;
+    }
+    if (!window.confirm("Bangun ulang ringkasan harian dari seluruh riwayat transaksi? Berguna sekali setelah update, atau kalau angka di halaman Bulanan terasa tidak sesuai.")) return;
+
+    setIsRebuildingSummaries(true);
+    try {
+      const days = await rebuildAllDailySummaries(user.uid);
+      showToast(`Berhasil membangun ulang ringkasan untuk ${days} hari!`);
+    } catch (e: any) {
+      console.error(e);
+      showToast("Gagal membangun ulang ringkasan: " + e.message, 'error');
+    } finally {
+      setIsRebuildingSummaries(false);
     }
   };
 
@@ -305,7 +327,7 @@ export default function App() {
 
         <main className="flex-1 overflow-y-auto">
           {currentTab === "home" && <HomeView user={user} t={t} onViewMore={() => setCurrentTab("history")} />}
-          {currentTab === "history" && <HistoryView user={user} t={t} isExporting={isExporting} onExport={exportToSheets} onForceReset={forceResetExport} showToast={showToast} />}
+          {currentTab === "history" && <HistoryView user={user} t={t} isExporting={isExporting} onExport={exportToSheets} onForceReset={forceResetExport} isRebuildingSummaries={isRebuildingSummaries} onRebuildSummaries={rebuildSummaries} showToast={showToast} />}
           {currentTab === "monthly" && <MonthlyView user={user} t={t} />}
         </main>
 
