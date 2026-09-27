@@ -15,3 +15,5 @@ test/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+Thumbs.db
+*.tsbuildinfo

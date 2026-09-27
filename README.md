@@ -106,8 +106,7 @@ The Worker serves the Vite build from `dist/` and handles:
 - `POST /api/parse-audio`
 - `POST /api/parse-text`
 
-Do not deploy this project as a static-only site. The `functions/` directory is
-for Cloudflare Pages and is not used when deploying a `workers.dev` Worker.
+Do not deploy this project as a static-only site — it needs the Worker API routes above.
 
 ## Project Structure
 
