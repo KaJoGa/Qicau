@@ -121,7 +121,7 @@ export const SHARED_SCHEMA = {
 
 export type GeminiPart = { text: string } | { inlineData: { data: string; mimeType: string } };
 
-const MODELS_TO_TRY = [
+export const MODELS_TO_TRY = [
   "gemini-3.5-flash-lite",
   "gemini-3.5-flash",
   "gemini-3.6-flash",

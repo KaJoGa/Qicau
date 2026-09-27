@@ -90,7 +90,7 @@ GEMINI_API_KEY="your-key-from-aistudio.google.com/apikey"
 npm run dev
 ```
 
-Opens at http://localhost:3000 (full-stack: Express + Vite middleware). Port 3000 is hardcoded, can be changed.
+Opens at http://localhost:3000 by default (full-stack: Express + Vite middleware). If port 3000 is already in use on your machine, the server automatically picks a free port instead and prints the actual URL to the console. To pin a specific port, set `PORT` in your environment (e.g. `PORT=5173 npm run dev`) — an explicit `PORT` is used as-is and the server fails loudly if that one is taken.
 
 ## Deployment
 

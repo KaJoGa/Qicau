@@ -10,3 +10,7 @@ docs/
 .wrangler/
 .vscode
 .env
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

@@ -6,7 +6,11 @@ import { audioParts, generateTransactionContent, textParts } from "./shared/gemi
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Respect an explicit PORT (useful for tests/CI so multiple instances can run
+  // side by side). Otherwise default to 3000 but auto-fall-back to a free port
+  // if 3000 is already taken on this machine — no need to know in advance.
+  const requestedPort = process.env.PORT ? Number(process.env.PORT) : 3000;
+  const portWasExplicit = !!process.env.PORT;
 
   // Increase payload limit because audio data can be large
   app.use(express.json({ limit: "50mb" }));
@@ -71,9 +75,23 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  const listenOn = (port: number) => {
+    const server = app.listen(port, "0.0.0.0", () => {
+      const actualPort = (server.address() as any)?.port ?? port;
+      console.log(`Server running on http://localhost:${actualPort}`);
+    });
+    server.on("error", (err: any) => {
+      if (err.code === "EADDRINUSE" && !portWasExplicit) {
+        console.warn(`Port ${port} is already in use, picking a free port instead...`);
+        listenOn(0); // 0 = let the OS assign any free port
+      } else {
+        console.error(err);
+        process.exit(1);
+      }
+    });
+  };
+
+  listenOn(requestedPort);
 }
 
 startServer();

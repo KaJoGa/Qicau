@@ -9,7 +9,8 @@
     "deploy": "npm run build && wrangler deploy",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "emulators": "firebase emulators:start"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
