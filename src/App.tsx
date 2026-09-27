@@ -10,6 +10,7 @@ import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
 import { syncToSheets } from "./lib/sheetsSync";
 import { rebuildAllDailySummaries } from "./lib/dailySummary";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { PWAUpdatePrompt } from "./components/PWAUpdatePrompt";
@@ -21,6 +22,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isRebuildingSummaries, setIsRebuildingSummaries] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showSyncConfirm, setShowSyncConfirm] = useState<false | "first" | "return">(false);
   const [toastMessage, setToastMessage] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const t = dict.id;
 
@@ -38,12 +41,19 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 5000);
   };
 
-  const exportToSheets = async () => {
+  const exportToSheets = () => {
     if (!user || isExporting) return;
     if (!navigator.onLine) {
       showToast("Anda sedang offline. Sinkronisasi ke Google Sheets memerlukan koneksi internet.", "error");
       return;
     }
+    const hasSyncedBefore = localStorage.getItem("qicau_sheets_synced_before") === "true";
+    setShowSyncConfirm(hasSyncedBefore ? "return" : "first");
+  };
+
+  const runExportToSheets = async () => {
+    setShowSyncConfirm(false);
+    if (!user) return;
     setIsExporting(true);
 
     try {
@@ -76,6 +86,7 @@ export default function App() {
       }
 
       const msg = await syncToSheets(allTxs, token, () => {});
+      localStorage.setItem("qicau_sheets_synced_before", "true");
       showToast(msg || "Sinkronisasi Google Sheets Berhasil!");
     } catch (e: any) {
       if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
@@ -91,14 +102,18 @@ export default function App() {
     }
   };
 
-  const forceResetExport = async () => {
+  const forceResetExport = () => {
     if (!user || isExporting) return;
     if (!navigator.onLine) {
       showToast("Anda sedang offline. Silakan sambungkan internet untuk reset sinkronisasi.", "error");
       return;
     }
-    if (!window.confirm("Apakah Anda yakin ingin ekspor ulang seluruh data ke Sheets (meskipun sudah diekspor)?")) return;
+    setShowResetConfirm(true);
+  };
 
+  const runForceResetExport = async () => {
+    setShowResetConfirm(false);
+    if (!user) return;
     setIsExporting(true);
     try {
       const { writeBatch } = await import("firebase/firestore");
@@ -441,6 +456,29 @@ export default function App() {
             </div>
           </div>
         )}
+
+        <ConfirmDialog
+          open={showResetConfirm}
+          title="Reset Status Ekspor?"
+          message="Semua transaksi akan ditandai belum-terekspor dan terkirim ulang ke Google Sheets pada sync berikutnya. Baris yang sudah ada di Sheets tidak dihapus dulu — ini bisa membuat data ganda kalau file sudah berisi transaksi yang sama."
+          confirmLabel="Ya, Reset"
+          danger
+          cooldownMs={1000}
+          onConfirm={runForceResetExport}
+          onCancel={() => setShowResetConfirm(false)}
+        />
+        <ConfirmDialog
+          open={showSyncConfirm !== false}
+          title={showSyncConfirm === "first" ? "Izinkan Akses Google Sheets & Drive" : "Sinkronisasi ke Sheets"}
+          message={
+            showSyncConfirm === "first"
+              ? "Qicau perlu izin untuk membuat dan menulis file spreadsheet di Google Drive kamu — di situlah hasil ekspor disimpan. Sebentar lagi akan muncul jendela izin dari Google; ini normal, cukup pilih akun kamu dan klik Izinkan."
+              : "Sinkronkan transaksi terbaru ke Google Sheets sekarang?"
+          }
+          confirmLabel={showSyncConfirm === "first" ? "Lanjutkan" : "Sync"}
+          onConfirm={runExportToSheets}
+          onCancel={() => setShowSyncConfirm(false)}
+        />
       </div>
     </div>
   );
