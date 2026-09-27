@@ -5,6 +5,7 @@ import { AudioRecorder, playBeep } from "../lib/audio";
 import { ParsedTransaction, Transaction } from "../types";
 import { setDoc, collection, doc, deleteDoc, query, where, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { bumpDailySummary } from "../lib/dailySummary";
 import { dict } from "../lib/i18n";
 
 const CATEGORY_OPTIONS = [
@@ -238,8 +239,8 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
   const [directPaymentMethod, setDirectPaymentMethod] = useState("QRIS");
   const [directDetail, setDirectDetail] = useState("");
   const [volume, setVolume] = useState(0);
-  const [toast, setToast] = useState<{ id: string, tx: ParsedTransaction, dbId: string } | null>(null);
-  const [editingTx, setEditingTx] = useState<{ id: string, tx: ParsedTransaction } | null>(null);
+  const [toast, setToast] = useState<{ id: string, tx: ParsedTransaction, dbId: string, createdAt: number } | null>(null);
+  const [editingTx, setEditingTx] = useState<{ id: string, tx: ParsedTransaction, original: ParsedTransaction, createdAt: number } | null>(null);
   const [recentTxs, setRecentTxs] = useState<Transaction[]>([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [isLoadingRecent, setIsLoadingRecent] = useState(true);
@@ -363,10 +364,10 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
       }
 
       // Save to Firebase
-      const newDocId = saveToDb(parsed);
+      const saved = saveToDb(parsed);
 
       const newToastId = Date.now().toString();
-      setToast({ id: newToastId, tx: parsed, dbId: newDocId });
+      setToast({ id: newToastId, tx: parsed, dbId: saved.id, createdAt: saved.createdAt });
 
       // Auto dismiss toast
       setTimeout(() => {
@@ -383,15 +384,17 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
 
   const saveToDb = (tx: ParsedTransaction) => {
     const docRef = doc(collection(db, "transactions"));
+    const createdAt = Date.now();
     setDoc(docRef, {
       ...tx,
       user_id: user.uid,
-      created_at: Date.now()
+      created_at: createdAt
     }).catch((e: any) => {
       console.error("Firebase write err", e);
       alert("Firebase write error: " + e.message);
     });
-    return docRef.id;
+    bumpDailySummary(user.uid, createdAt, tx.kategori, tx.harga, 1);
+    return { id: docRef.id, createdAt };
   };
 
   const saveLowConfidenceLog = (parsed: ParsedTransaction, source: "voice" | "text", inputText?: string) => {
@@ -450,10 +453,10 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
       }
 
       // Save to Firebase
-      const newDocId = saveToDb(parsed);
+      const saved = saveToDb(parsed);
 
       const newToastId = Date.now().toString();
-      setToast({ id: newToastId, tx: parsed, dbId: newDocId });
+      setToast({ id: newToastId, tx: parsed, dbId: saved.id, createdAt: saved.createdAt });
       setManualText(""); // Clear manual input text
       
       // Auto dismiss toast
@@ -486,9 +489,9 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
       raw_transcript: `Input Manual: ${directPlatform || directKategori} ${numHarga}`,
     };
 
-    const newDocId = saveToDb(parsed);
+    const saved = saveToDb(parsed);
     const newToastId = Date.now().toString();
-    setToast({ id: newToastId, tx: parsed, dbId: newDocId });
+    setToast({ id: newToastId, tx: parsed, dbId: saved.id, createdAt: saved.createdAt });
     setIsManualInput(false);
     setDirectHarga("");
     setDirectPlatform("");
@@ -499,25 +502,31 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
     }, 5000);
   };
 
-  const undoTransaction = (dbId: string) => {
+  const undoTransaction = (dbId: string, tx: ParsedTransaction, createdAt: number) => {
     setToast(null);
     deleteDoc(doc(db, "transactions", dbId)).catch((e) => {
       console.error(e);
       alert("Gagal undo");
     });
+    bumpDailySummary(user.uid, createdAt, tx.kategori, tx.harga, -1);
   };
 
   const saveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTx) return;
-    
+
     updateDoc(doc(db, "transactions", editingTx.id), {
       ...editingTx.tx
     }).catch((err: any) => {
       console.error(err);
       alert("Gagal menyimpan perubahan: " + err.message);
     });
-    
+
+    // Reverse the pre-edit values and apply the new ones, so daily_summaries
+    // stays correct whether or not the category itself changed.
+    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
+    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
+
     setEditingTx(null);
   };
 
@@ -663,7 +672,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
             <div className="flex justify-end gap-2 border-t border-neutral-100 dark:border-neutral-700 pt-3">
               <button 
                 onClick={() => {
-                  setEditingTx({ id: toast.dbId, tx: toast.tx });
+                  setEditingTx({ id: toast.dbId, tx: toast.tx, original: toast.tx, createdAt: toast.createdAt });
                   setToast(null);
                 }} 
                 className="px-3 py-1.5 flex items-center gap-1.5 bg-neutral-100 dark:bg-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-600 rounded-lg text-sm font-medium transition-colors"
@@ -671,7 +680,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                 <Pencil className="w-3.5 h-3.5" /> {t.editTx}
               </button>
               <button 
-                onClick={() => undoTransaction(toast.dbId)}
+                onClick={() => undoTransaction(toast.dbId, toast.tx, toast.createdAt)}
                 className="px-3 py-1.5 flex items-center gap-1.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-sm font-medium transition-colors"
               >
                 <Undo2 className="w-3.5 h-3.5" /> {t.undo}
