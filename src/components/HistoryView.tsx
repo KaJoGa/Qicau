@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { User } from "firebase/auth";
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { bumpDailySummary } from "../lib/dailySummary";
-import { Transaction } from "../types";
+import { Transaction, ParsedTransaction } from "../types";
 import { getCategoryIcon } from "./HomeView";
-import { Trash2, Loader2, RefreshCw, Filter, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { EditTransactionModal, EditingTx } from "./EditTransactionModal";
+import { Trash2, Pencil, Loader2, RefreshCw, Filter, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { dict } from "../lib/i18n";
 
 interface HistoryViewProps {
@@ -29,6 +30,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
   const [openDate, setOpenDate] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [editingTx, setEditingTx] = useState<EditingTx | null>(null);
   const [txToDelete, setTxToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
@@ -106,6 +108,43 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
     } finally {
       setIsLoadingMore(false);
     }
+  };
+
+  const openEdit = (tx: Transaction) => {
+    const parsed: ParsedTransaction = {
+      kategori: tx.kategori,
+      platform: tx.platform,
+      harga: tx.harga,
+      detail: tx.detail,
+      payment_method: tx.payment_method,
+      confidence: tx.confidence,
+      raw_transcript: tx.raw_transcript,
+    };
+    setEditingTx({ id: tx.id, tx: parsed, original: parsed, createdAt: tx.created_at });
+    setSelectedTx(null);
+  };
+
+  const saveEditHistory = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingTx) return;
+
+    updateDoc(doc(db, "transactions", editingTx.id), {
+      ...editingTx.tx
+    }).catch((err: any) => {
+      console.error(err);
+      showToast("Gagal menyimpan perubahan: " + err.message, 'error');
+    });
+
+    // Reverse the pre-edit values and apply the new ones, so daily_summaries
+    // stays correct whether or not the category (or the day — it never changes
+    // here, date isn't editable) changed.
+    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
+    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
+
+    // Manually patch local state since onSnapshot only tracks first page
+    setTransactions(prev => prev.map(tx => tx.id === editingTx.id ? { ...tx, ...editingTx.tx } : tx));
+
+    setEditingTx(null);
   };
 
   const handleDeleteConfirm = async () => {
@@ -450,19 +489,36 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
                 )}
               </div>
               
-              <button
-                onClick={() => {
-                  setTxToDelete(selectedTx.id);
-                }}
-                className="w-full py-3 px-4 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-              >
-                <Trash2 className="w-4 h-4" />
-                Hapus Transaksi
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => openEdit(selectedTx)}
+                  className="flex-1 py-3 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Pencil className="w-4 h-4" />
+                  {t.editTx}
+                </button>
+                <button
+                  onClick={() => {
+                    setTxToDelete(selectedTx.id);
+                  }}
+                  className="flex-1 py-3 px-4 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-400 font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Hapus Transaksi
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      <EditTransactionModal
+        editingTx={editingTx}
+        onChange={(tx) => setEditingTx((curr) => curr ? { ...curr, tx } : null)}
+        onSave={saveEditHistory}
+        onClose={() => setEditingTx(null)}
+        t={t}
+      />
 
       {txToDelete && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
