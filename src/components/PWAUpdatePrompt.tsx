@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { RefreshCw, X } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { registerSW } from "virtual:pwa-register";
 
 export const PWAUpdatePrompt: React.FC = () => {
@@ -30,11 +30,25 @@ export const PWAUpdatePrompt: React.FC = () => {
     setNeedRefresh(false);
   };
 
+  // A hidden->visible transition means the user just switched away and back
+  // (or reopened the tab) - never mid-input - so it's safe to apply the
+  // update on its own without waiting for a manual click.
+  useEffect(() => {
+    if (!needRefresh) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        handleUpdate();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [needRefresh, updateFunction]);
+
   if (!needRefresh) return null;
 
   return (
-    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-md w-full animate-in slide-in-from-bottom-3 duration-300">
-      <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-neutral-900/95 dark:bg-white/95 text-white dark:text-neutral-900 shadow-2xl border border-neutral-700 dark:border-neutral-200 backdrop-blur-md">
+    <div className="fixed top-0 inset-x-0 z-100 animate-in slide-in-from-top duration-300">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-lg">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
             <RefreshCw className="w-4 h-4 animate-spin" />
@@ -52,12 +66,6 @@ export const PWAUpdatePrompt: React.FC = () => {
             className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-neutral-950 text-xs font-bold transition-all shadow-sm"
           >
             Perbarui
-          </button>
-          <button
-            onClick={() => setNeedRefresh(false)}
-            className="p-1 rounded-full text-neutral-400 hover:text-white dark:hover:text-neutral-900 transition-colors"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
