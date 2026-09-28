@@ -519,7 +519,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
       />
 
       {txToDelete && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-60 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-neutral-900 rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 p-6 flex flex-col gap-6 text-center">
             <div className="mx-auto w-16 h-16 bg-red-50 dark:bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-2">
               <Trash2 className="w-8 h-8" />
