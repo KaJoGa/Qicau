@@ -259,8 +259,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
           </span>
           <span className="hidden sm:block">{t.transactionHistory}</span>
         </h2>
-        {transactions.length > 0 && (
-          <div className="flex flex-col-reverse sm:flex-row items-end sm:items-center gap-2">
+        <div className="flex flex-col-reverse sm:flex-row items-end sm:items-center gap-2">
             <button
               onClick={onRebuildSummaries}
               disabled={isRebuildingSummaries}
@@ -293,8 +292,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
                 </>
               )}
             </button>
-          </div>
-        )}
+        </div>
       </div>
 
       <div className="flex gap-2 mb-6 relative">

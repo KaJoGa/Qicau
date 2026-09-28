@@ -23,6 +23,7 @@ export default function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [isRebuildingSummaries, setIsRebuildingSummaries] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
   const [showSyncConfirm, setShowSyncConfirm] = useState<false | "first" | "return">(false);
   const [toastMessage, setToastMessage] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const t = dict.id;
@@ -142,14 +143,18 @@ export default function App() {
     }
   };
 
-  const rebuildSummaries = async () => {
+  const rebuildSummaries = () => {
     if (!user || isRebuildingSummaries) return;
     if (!navigator.onLine) {
       showToast("Anda sedang offline. Silakan sambungkan internet untuk membangun ulang ringkasan.", "error");
       return;
     }
-    if (!window.confirm("Bangun ulang ringkasan harian dari seluruh riwayat transaksi? Berguna sekali setelah update, atau kalau angka di halaman Bulanan terasa tidak sesuai.")) return;
+    setShowRebuildConfirm(true);
+  };
 
+  const runRebuildSummaries = async () => {
+    setShowRebuildConfirm(false);
+    if (!user) return;
     setIsRebuildingSummaries(true);
     try {
       const days = await rebuildAllDailySummaries(user.uid);
@@ -460,7 +465,7 @@ export default function App() {
         <ConfirmDialog
           open={showResetConfirm}
           title="Reset Status Ekspor?"
-          message="Semua transaksi akan ditandai belum-terekspor dan terkirim ulang ke Google Sheets pada sync berikutnya. Baris yang sudah ada di Sheets tidak dihapus dulu — ini bisa membuat data ganda kalau file sudah berisi transaksi yang sama."
+          message="Semua transaksi ditandai belum-terekspor dan dikirim ulang saat sync berikutnya. Baris lama tidak dihapus dulu, jadi bisa ada data ganda di Sheets."
           confirmLabel="Ya, Reset"
           danger
           cooldownMs={1000}
@@ -472,12 +477,20 @@ export default function App() {
           title={showSyncConfirm === "first" ? "Izinkan Akses Google Sheets & Drive" : "Sinkronisasi ke Sheets"}
           message={
             showSyncConfirm === "first"
-              ? "Qicau perlu izin untuk membuat dan menulis file spreadsheet di Google Drive kamu — di situlah hasil ekspor disimpan. Sebentar lagi akan muncul jendela izin dari Google; ini normal, cukup pilih akun kamu dan klik Izinkan."
+              ? "Qicau perlu izin membuat dan menulis file spreadsheet di Google Drive kamu untuk menyimpan hasil ekspor. Sebentar lagi muncul jendela izin dari Google, itu normal, tinggal pilih akun dan klik Izinkan."
               : "Sinkronkan transaksi terbaru ke Google Sheets sekarang?"
           }
           confirmLabel={showSyncConfirm === "first" ? "Lanjutkan" : "Sync"}
           onConfirm={runExportToSheets}
           onCancel={() => setShowSyncConfirm(false)}
+        />
+        <ConfirmDialog
+          open={showRebuildConfirm}
+          title="Bangun Ulang Ringkasan?"
+          message="Ringkasan harian dihitung ulang dari seluruh riwayat transaksi. Berguna kalau angka di tab Ringkasan terasa tidak sesuai."
+          confirmLabel="Bangun Ulang"
+          onConfirm={runRebuildSummaries}
+          onCancel={() => setShowRebuildConfirm(false)}
         />
       </div>
     </div>
