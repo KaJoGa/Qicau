@@ -17,11 +17,11 @@ const COLORS: Record<string, string> = {
   "Lainnya": "#8b5cf6",    // violet-500
 };
 
-export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
+export function MonthlyView({ user, t, showToast }: { user: User; t: typeof dict["id"]; showToast?: (msg: string, type?: 'success'|'error') => void }) {
   const [filterMode, setFilterMode] = useState<"monthly" | "weekly">("monthly");
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [catTotals, setCatTotals] = useState<Record<string, number>>({});
-  
+
   useEffect(() => {
     const start = new Date();
     if (filterMode === "monthly") {
@@ -35,13 +35,18 @@ export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
       start.setHours(0, 0, 0, 0);
     }
 
-    // daily_summaries doc ids are `${uid}_${YYYYMMDD}`, so a plain documentId()
-    // range query stays scoped to this user's days without needing a composite index.
+    // daily_summaries doc ids are `${uid}_${YYYYMMDD}`, so the documentId()
+    // range keeps this scoped to the user's own days. The explicit user_id
+    // filter below is redundant with that prefix, but it's required anyway:
+    // Firestore rejects a list query outright unless it can prove the
+    // security rule (resource.data.user_id == auth.uid) from the query's own
+    // filters - it won't evaluate the rule per-document for list requests.
     const startId = `${user.uid}_${dayIdFromTimestamp(start.getTime())}`;
     const endId = `${user.uid}_${dayIdFromTimestamp(Date.now())}`;
 
     const q = query(
       collection(db, "daily_summaries"),
+      where("user_id", "==", user.uid),
       where(documentId(), ">=", startId),
       where(documentId(), "<=", endId)
     );
@@ -60,6 +65,9 @@ export function MonthlyView({ user, t }: { user: User; t: typeof dict["id"] }) {
 
       setTotalExpenses(tot);
       setCatTotals(cats);
+    }, (err) => {
+      console.error("daily_summaries listener error", err);
+      showToast?.("Gagal memuat ringkasan: " + err.message, "error");
     });
 
     return unsub;

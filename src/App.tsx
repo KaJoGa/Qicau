@@ -364,7 +364,7 @@ export default function App() {
         <main className="flex-1 overflow-y-auto">
           {currentTab === "home" && <HomeView user={user} t={t} onViewMore={() => setCurrentTab("history")} />}
           {currentTab === "history" && <HistoryView user={user} t={t} isExporting={isExporting} onExport={exportToSheets} onForceReset={forceResetExport} isRebuildingSummaries={isRebuildingSummaries} onRebuildSummaries={rebuildSummaries} showToast={showToast} />}
-          {currentTab === "monthly" && <MonthlyView user={user} t={t} />}
+          {currentTab === "monthly" && <MonthlyView user={user} t={t} showToast={showToast} />}
         </main>
 
         <nav className="fixed bottom-0 left-0 right-0 max-w-3xl mx-auto w-full bg-neutral-50/80 dark:bg-neutral-950/80 backdrop-blur border-t border-x border-t-neutral-200 border-x-neutral-200/50 dark:border-t-neutral-800 dark:border-x-neutral-900 flex justify-around pb-safe pt-2 px-2 z-20 transition-colors">
