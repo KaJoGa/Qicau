@@ -8,7 +8,7 @@ import { MonthlyView } from "./components/MonthlyView";
 import { NotebookPen, History, BarChart3, Settings, Mic, Database, LogOut, Sun, Moon, Monitor, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
-import { syncToSheets } from "./lib/sheetsSync";
+import { syncToSheets, trashSheetsFiles } from "./lib/sheetsSync";
 import { rebuildAllDailySummaries } from "./lib/dailySummary";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
@@ -52,27 +52,32 @@ export default function App() {
     setShowSyncConfirm(hasSyncedBefore ? "return" : "first");
   };
 
+  const getSheetsToken = async (): Promise<string> => {
+    let token = localStorage.getItem("qicau_sheets_token");
+    const tokenExp = localStorage.getItem("qicau_sheets_token_exp");
+
+    if (!token || !tokenExp || Date.now() > parseInt(tokenExp)) {
+      const res = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(res);
+      token = credential?.accessToken || null;
+
+      if (token) {
+        localStorage.setItem("qicau_sheets_token", token);
+        localStorage.setItem("qicau_sheets_token_exp", (Date.now() + 50 * 60 * 1000).toString());
+      }
+    }
+
+    if (!token) throw new Error("Akses token Google Sheets tidak tersedia.");
+    return token;
+  };
+
   const runExportToSheets = async () => {
     setShowSyncConfirm(false);
     if (!user) return;
     setIsExporting(true);
 
     try {
-      let token = localStorage.getItem("qicau_sheets_token");
-      const tokenExp = localStorage.getItem("qicau_sheets_token_exp");
-
-      if (!token || !tokenExp || Date.now() > parseInt(tokenExp)) {
-        const res = await signInWithPopup(auth, googleProvider);
-        const credential = GoogleAuthProvider.credentialFromResult(res);
-        token = credential?.accessToken || null;
-
-        if (token) {
-          localStorage.setItem("qicau_sheets_token", token);
-          localStorage.setItem("qicau_sheets_token_exp", (Date.now() + 50 * 60 * 1000).toString());
-        }
-      }
-
-      if (!token) throw new Error("Akses token Google Sheets tidak tersedia.");
+      const token = await getSheetsToken();
 
       const allSnap = await getDocs(query(
         collection(db, "transactions"),
@@ -117,6 +122,9 @@ export default function App() {
     if (!user) return;
     setIsExporting(true);
     try {
+      const token = await getSheetsToken();
+      const trashedCount = await trashSheetsFiles(token);
+
       const { writeBatch } = await import("firebase/firestore");
       const allSnap = await getDocs(query(
         collection(db, "transactions"),
@@ -134,10 +142,18 @@ export default function App() {
       if (i > 0) {
         await batch.commit();
       }
-      showToast(`Berhasil mereset status ${i} transaksi! Silakan tekan tombol Sync ke Sheets sekarang.`);
-    } catch (e) {
+
+      const trashMsg = trashedCount > 0 ? ` File Sheets lama dipindahkan ke Trash Drive.` : "";
+      showToast(`Berhasil mereset status ${i} transaksi!${trashMsg} Silakan tekan tombol Sync ke Sheets sekarang.`);
+    } catch (e: any) {
+      if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+        console.log("Login popup closed by user");
+        return;
+      }
       console.error(e);
-      showToast("Gagal reset sinkronisasi.", 'error');
+      localStorage.removeItem("qicau_sheets_token");
+      localStorage.removeItem("qicau_sheets_token_exp");
+      showToast("Gagal reset sinkronisasi: " + e.message, 'error');
     } finally {
       setIsExporting(false);
     }
@@ -465,7 +481,7 @@ export default function App() {
         <ConfirmDialog
           open={showResetConfirm}
           title="Reset Status Ekspor?"
-          message="Semua transaksi ditandai belum-terekspor dan dikirim ulang saat sync berikutnya. Baris lama tidak dihapus dulu, jadi bisa ada data ganda di Sheets."
+          message="File Google Sheets yang sudah ada akan dipindahkan ke Trash Drive, dan semua transaksi ditandai belum-terekspor. Sync berikutnya akan membuat file baru dari awal."
           confirmLabel="Ya, Reset"
           danger
           cooldownMs={1000}
@@ -477,10 +493,10 @@ export default function App() {
           title={showSyncConfirm === "first" ? "Izinkan Akses Google Sheets & Drive" : "Sinkronisasi ke Sheets"}
           message={
             showSyncConfirm === "first"
-              ? "Qicau perlu izin membuat dan menulis file spreadsheet di Google Drive kamu untuk menyimpan hasil ekspor. Sebentar lagi muncul jendela izin dari Google, itu normal, tinggal pilih akun dan klik Izinkan."
+              ? "Qicau perlu izin membuat dan menulis file spreadsheet di Google Drive kamu untuk menyimpan hasil ekspor. Tekan lanjut untuk memuncul jendela izin dari Google, itu normal, tinggal pilih akun dan klik Izinkan."
               : "Sinkronkan transaksi terbaru ke Google Sheets sekarang?"
           }
-          confirmLabel={showSyncConfirm === "first" ? "Lanjutkan" : "Sync"}
+          confirmLabel={showSyncConfirm === "first" ? "Lanjut" : "Sync"}
           onConfirm={runExportToSheets}
           onCancel={() => setShowSyncConfirm(false)}
         />

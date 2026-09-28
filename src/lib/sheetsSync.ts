@@ -46,8 +46,41 @@ function getHeaderRow() {
   };
 }
 
+// Moves every Qicau-created export spreadsheet (any year) to Google Drive's
+// trash, not permanent delete, so the user can still recover it from Drive
+// for a while if this was pressed by mistake. Returns how many were trashed.
+export async function trashSheetsFiles(token: string): Promise<number> {
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=name contains 'Qicau_Export_' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+    { headers: { "Authorization": `Bearer ${token}` } }
+  );
+  if (!searchRes.ok) {
+    const err = await searchRes.json();
+    throw new Error(`Drive API Error: ${err.error?.message}`);
+  }
+  const searchData = await searchRes.json();
+  const files: { id: string }[] = searchData.files || [];
+
+  for (const file of files) {
+    const trashRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ trashed: true })
+    });
+    if (!trashRes.ok) {
+      const err = await trashRes.json();
+      throw new Error(`Drive API Error: ${err.error?.message}`);
+    }
+  }
+
+  return files.length;
+}
+
 export async function syncToSheets(
-  transactions: Transaction[], 
+  transactions: Transaction[],
   token: string, 
   onProgress?: (msg: string) => void
 ) {
