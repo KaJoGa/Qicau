@@ -1,7 +1,7 @@
 // Per-day aggregate of transactions, kept in sync with the `transactions` collection
 // on every create/edit/delete. MonthlyView reads these instead of scanning every
 // transaction, so its cost stays bounded to (days in range) instead of (total transactions).
-import { doc, setDoc, deleteDoc, getDocs, collection, query, where, increment } from "firebase/firestore";
+import { doc, setDoc, getDocs, collection, query, where, increment } from "firebase/firestore";
 import { db } from "./firebase";
 import { Transaction } from "../types";
 
@@ -65,12 +65,13 @@ export async function rebuildAllDailySummaries(uid: string): Promise<number> {
 
   // Days that used to have transactions but now have none (all deleted) won't
   // appear in byDay above, so their old summary doc would otherwise be left
-  // stale forever. Find and clear those explicitly.
+  // stale forever. Zero them out explicitly (there's no delete rule for this
+  // collection - summaries are only ever created/overwritten, never deleted).
   const existingSummaries = await getDocs(query(collection(db, "daily_summaries"), where("user_id", "==", uid)));
   for (const d of existingSummaries.docs) {
     const dayId = d.data().day as string;
     if (!byDay.has(dayId)) {
-      await deleteDoc(d.ref);
+      await setDoc(d.ref, { user_id: uid, day: dayId, total: 0, by_category: {} });
     }
   }
 
