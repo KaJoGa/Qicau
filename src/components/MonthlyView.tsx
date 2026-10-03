@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { User } from "firebase/auth";
 import { collection, query, where, documentId, onSnapshot } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { dayIdFromTimestamp } from "../lib/dailySummary";
+import { dayIdFromTimestamp, rebuildDaySummary, summaryNeedsRepair } from "../lib/dailySummary";
 import { getCategoryIcon } from "./HomeView";
 import { dict } from "../lib/i18n";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -16,6 +16,10 @@ const COLORS: Record<string, string> = {
   "Tagihan": "#eab308",    // yellow-500
   "Lainnya": "#8b5cf6",    // violet-500
 };
+
+// Days already repaired (or being repaired) this session, so a day that stays odd
+// is retried at most once instead of looping on every snapshot.
+const repairAttempted = new Set<string>();
 
 export function MonthlyView({ user, t, showToast }: { user: User; t: typeof dict["id"]; showToast?: (msg: string, type?: 'success'|'error') => void }) {
   const [filterMode, setFilterMode] = useState<"monthly" | "weekly">("monthly");
@@ -57,6 +61,14 @@ export function MonthlyView({ user, t, showToast }: { user: User; t: typeof dict
 
       snap.docs.forEach(d => {
         const summary = d.data() as { total: number; by_category?: Record<string, number> };
+        // Self-heal: if a day contradicts itself, recompute just that day in the background.
+        if (summaryNeedsRepair(d.data()) && !repairAttempted.has(d.id) && navigator.onLine) {
+          repairAttempted.add(d.id);
+          rebuildDaySummary(user.uid, d.id.slice(d.id.lastIndexOf("_") + 1)).catch((err) => {
+            console.error("daily summary repair failed", err);
+            repairAttempted.delete(d.id);
+          });
+        }
         tot += summary.total || 0;
         Object.entries(summary.by_category || {}).forEach(([kategori, amount]) => {
           cats[kategori] = (cats[kategori] || 0) + amount;

@@ -9,7 +9,6 @@ import { NotebookPen, History, BarChart3, Settings, Mic, Database, LogOut, Sun, 
 import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
 import { syncToSheets, trashSheetsFiles } from "./lib/sheetsSync";
-import { rebuildAllDailySummaries } from "./lib/dailySummary";
 import { runExclusive } from "./lib/sheetsLock";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
@@ -22,9 +21,7 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<"home" | "history" | "monthly">("home");
   const [showSettings, setShowSettings] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [isRebuildingSummaries, setIsRebuildingSummaries] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
   const [showSyncConfirm, setShowSyncConfirm] = useState<false | "first" | "return">(false);
   const [toastMessage, setToastMessage] = useState<{msg: string, type: 'success'|'error'} | null>(null);
   const t = dict.id;
@@ -174,30 +171,6 @@ export default function App() {
       showToast("Gagal reset sinkronisasi: " + e.message, 'error');
     } finally {
       setIsExporting(false);
-    }
-  };
-
-  const rebuildSummaries = () => {
-    if (!user || isRebuildingSummaries) return;
-    if (!navigator.onLine) {
-      showToast("Anda sedang offline. Silakan sambungkan internet untuk membangun ulang ringkasan.", "error");
-      return;
-    }
-    setShowRebuildConfirm(true);
-  };
-
-  const runRebuildSummaries = async () => {
-    setShowRebuildConfirm(false);
-    if (!user) return;
-    setIsRebuildingSummaries(true);
-    try {
-      const days = await rebuildAllDailySummaries(user.uid);
-      showToast(`Berhasil membangun ulang ringkasan untuk ${days} hari!`);
-    } catch (e: any) {
-      console.error(e);
-      showToast("Gagal membangun ulang ringkasan: " + e.message, 'error');
-    } finally {
-      setIsRebuildingSummaries(false);
     }
   };
 
@@ -381,7 +354,7 @@ export default function App() {
 
         <main className="flex-1 overflow-y-auto">
           {currentTab === "home" && <HomeView user={user} t={t} onViewMore={() => setCurrentTab("history")} />}
-          {currentTab === "history" && <HistoryView user={user} t={t} isExporting={isExporting} onExport={exportToSheets} onForceReset={forceResetExport} isRebuildingSummaries={isRebuildingSummaries} onRebuildSummaries={rebuildSummaries} showToast={showToast} />}
+          {currentTab === "history" && <HistoryView user={user} t={t} isExporting={isExporting} onExport={exportToSheets} onForceReset={forceResetExport} showToast={showToast} />}
           {currentTab === "monthly" && <MonthlyView user={user} t={t} showToast={showToast} />}
         </main>
 
@@ -517,14 +490,6 @@ export default function App() {
           confirmLabel={showSyncConfirm === "first" ? "Lanjut" : "Sync"}
           onConfirm={runExportToSheets}
           onCancel={() => setShowSyncConfirm(false)}
-        />
-        <ConfirmDialog
-          open={showRebuildConfirm}
-          title="Bangun Ulang Ringkasan?"
-          message="Ringkasan harian dihitung ulang dari seluruh riwayat transaksi. Berguna kalau angka di tab Ringkasan terasa tidak sesuai."
-          confirmLabel="Bangun Ulang"
-          onConfirm={runRebuildSummaries}
-          onCancel={() => setShowRebuildConfirm(false)}
         />
       </div>
     </div>

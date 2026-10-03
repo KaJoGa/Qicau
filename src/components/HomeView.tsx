@@ -3,9 +3,9 @@ import { User } from "firebase/auth";
 import { Mic, MicOff, Check, Loader2, Undo2, Pencil, X } from "lucide-react";
 import { AudioRecorder, playBeep } from "../lib/audio";
 import { ParsedTransaction, Transaction } from "../types";
-import { setDoc, collection, doc, deleteDoc, query, where, orderBy, onSnapshot, updateDoc } from "firebase/firestore";
+import { setDoc, collection, doc, query, where, orderBy, onSnapshot, writeBatch } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { bumpDailySummary } from "../lib/dailySummary";
+import { addSummaryDelta } from "../lib/dailySummary";
 import { dict } from "../lib/i18n";
 import { EditTransactionModal, EditingTx } from "./EditTransactionModal";
 import { CATEGORY_OPTIONS, PAYMENT_OPTIONS } from "../lib/txOptions";
@@ -170,15 +170,18 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
   const saveToDb = (tx: ParsedTransaction) => {
     const docRef = doc(collection(db, "transactions"));
     const createdAt = Date.now();
-    setDoc(docRef, {
+    // Transaction + its daily summary delta commit together (all-or-nothing).
+    const batch = writeBatch(db);
+    batch.set(docRef, {
       ...tx,
       user_id: user.uid,
       created_at: createdAt
-    }).catch((e: any) => {
+    });
+    addSummaryDelta(batch, user.uid, createdAt, tx.kategori, tx.harga, 1);
+    batch.commit().catch((e: any) => {
       console.error("Firebase write err", e);
       alert("Firebase write error: " + e.message);
     });
-    bumpDailySummary(user.uid, createdAt, tx.kategori, tx.harga, 1);
     return { id: docRef.id, createdAt };
   };
 
@@ -289,28 +292,29 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
 
   const undoTransaction = (dbId: string, tx: ParsedTransaction, createdAt: number) => {
     setToast(null);
-    deleteDoc(doc(db, "transactions", dbId)).catch((e) => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "transactions", dbId));
+    addSummaryDelta(batch, user.uid, createdAt, tx.kategori, tx.harga, -1);
+    batch.commit().catch((e) => {
       console.error(e);
       alert("Gagal undo");
     });
-    bumpDailySummary(user.uid, createdAt, tx.kategori, tx.harga, -1);
   };
 
   const saveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTx) return;
 
-    updateDoc(doc(db, "transactions", editingTx.id), {
-      ...editingTx.tx
-    }).catch((err: any) => {
+    // Edit + summary correction commit together. Reverse the pre-edit values and apply
+    // the new ones, so daily_summaries stays correct whether or not the category changed.
+    const batch = writeBatch(db);
+    batch.update(doc(db, "transactions", editingTx.id), { ...editingTx.tx });
+    addSummaryDelta(batch, user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
+    addSummaryDelta(batch, user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
+    batch.commit().catch((err: any) => {
       console.error(err);
       alert("Gagal menyimpan perubahan: " + err.message);
     });
-
-    // Reverse the pre-edit values and apply the new ones, so daily_summaries
-    // stays correct whether or not the category itself changed.
-    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
-    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
 
     setEditingTx(null);
   };

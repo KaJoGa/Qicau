@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { User } from "firebase/auth";
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, getCountFromServer, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, limit, startAfter, getDocs, getCountFromServer, writeBatch, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { bumpDailySummary } from "../lib/dailySummary";
+import { addSummaryDelta } from "../lib/dailySummary";
 import { Transaction, ParsedTransaction } from "../types";
 import { getCategoryIcon } from "./HomeView";
 import { EditTransactionModal, EditingTx } from "./EditTransactionModal";
@@ -15,12 +15,10 @@ interface HistoryViewProps {
   isExporting: boolean;
   onExport: () => void;
   onForceReset: () => void;
-  isRebuildingSummaries: boolean;
-  onRebuildSummaries: () => void;
   showToast: (msg: string, type?: 'success'|'error') => void;
 }
 
-export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRebuildingSummaries, onRebuildSummaries, showToast }: HistoryViewProps) {
+export function HistoryView({ user, t, isExporting, onExport, onForceReset, showToast }: HistoryViewProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -142,18 +140,17 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
     e.preventDefault();
     if (!editingTx) return;
 
-    updateDoc(doc(db, "transactions", editingTx.id), {
-      ...editingTx.tx
-    }).catch((err: any) => {
+    // Edit + summary correction commit together. Reverse the pre-edit values and apply the
+    // new ones, so daily_summaries stays correct whether or not the category changed (the
+    // day never changes here: the date isn't editable).
+    const batch = writeBatch(db);
+    batch.update(doc(db, "transactions", editingTx.id), { ...editingTx.tx });
+    addSummaryDelta(batch, user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
+    addSummaryDelta(batch, user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
+    batch.commit().catch((err: any) => {
       console.error(err);
       showToast("Gagal menyimpan perubahan: " + err.message, 'error');
     });
-
-    // Reverse the pre-edit values and apply the new ones, so daily_summaries
-    // stays correct whether or not the category (or the day — it never changes
-    // here, date isn't editable) changed.
-    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.original.kategori, editingTx.original.harga, -1);
-    bumpDailySummary(user.uid, editingTx.createdAt, editingTx.tx.kategori, editingTx.tx.harga, 1);
 
     // Manually patch local state since onSnapshot only tracks first page
     setTransactions(prev => prev.map(tx => tx.id === editingTx.id ? { ...tx, ...editingTx.tx } : tx));
@@ -166,16 +163,18 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
       setIsDeleting(true);
       const deletedTx = transactions.find(tx => tx.id === txToDelete);
       try {
-        await deleteDoc(doc(db, "transactions", txToDelete));
+        const batch = writeBatch(db);
+        batch.delete(doc(db, "transactions", txToDelete));
+        if (deletedTx) {
+          addSummaryDelta(batch, user.uid, deletedTx.created_at, deletedTx.kategori, deletedTx.harga, -1);
+        }
+        await batch.commit();
         // Manually remove from local state since onSnapshot only tracks first page
         setTransactions(prev => prev.filter(tx => tx.id !== txToDelete));
         setCountVersion(v => v + 1);
         setTxToDelete(null);
         if (selectedTx && selectedTx.id === txToDelete) {
           setSelectedTx(null);
-        }
-        if (deletedTx) {
-          bumpDailySummary(user.uid, deletedTx.created_at, deletedTx.kategori, deletedTx.harga, -1);
         }
       } catch (e) {
         console.error("Gagal menghapus transaksi", e);
@@ -282,14 +281,6 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
           <span className="hidden sm:block">{t.transactionHistory}</span>
         </h2>
         <div className="flex flex-col-reverse sm:flex-row items-end sm:items-center gap-2">
-            <button
-              onClick={onRebuildSummaries}
-              disabled={isRebuildingSummaries}
-              title="Bangun ulang ringkasan harian (dipakai halaman Bulanan) dari seluruh riwayat"
-              className={`text-xs bg-neutral-100 hover:bg-neutral-200 text-neutral-600 dark:bg-neutral-800 dark:hover:bg-neutral-700 dark:text-neutral-300 py-1.5 px-3 rounded-lg transition-colors border border-neutral-200 dark:border-neutral-700 flex items-center justify-center min-w-[90px] w-full sm:w-auto ${isRebuildingSummaries ? 'opacity-80 cursor-not-allowed' : ''}`}
-            >
-              {isRebuildingSummaries ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Rebuild Ringkasan"}
-            </button>
             <button
               onClick={onForceReset}
               disabled={isExporting}

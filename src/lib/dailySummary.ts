@@ -1,7 +1,11 @@
 // Per-day aggregate of transactions, kept in sync with the `transactions` collection
 // on every create/edit/delete. MonthlyView reads these instead of scanning every
 // transaction, so its cost stays bounded to (days in range) instead of (total transactions).
-import { doc, setDoc, getDocs, collection, query, where, increment } from "firebase/firestore";
+//
+// Consistency: every transaction write and its summary delta go into ONE write batch
+// (all-or-nothing, also while offline), so they can't drift apart. As a safety net,
+// MonthlyView repairs any single day whose summary is internally inconsistent.
+import { doc, setDoc, getDocsFromServer, collection, query, where, orderBy, increment, DocumentData, WriteBatch } from "firebase/firestore";
 import { db } from "./firebase";
 import { Transaction } from "../types";
 
@@ -17,66 +21,59 @@ function summaryDocRef(uid: string, dayId: string) {
   return doc(db, "daily_summaries", `${uid}_${dayId}`);
 }
 
-export function summaryRangeIds(uid: string, start: Date, end: Date): { startId: string; endId: string } {
-  return {
-    startId: `${uid}_${dayIdFromTimestamp(start.getTime())}`,
-    endId: `${uid}_${dayIdFromTimestamp(end.getTime())}`,
-  };
-}
-
-// Applies a signed delta to the daily summary for the day `createdAt` falls on.
+// Adds a signed delta for the day `createdAt` falls on to `batch`.
 // sign=1 for a transaction being added, sign=-1 for one being removed/reversed.
-export function bumpDailySummary(uid: string, createdAt: number, kategori: string, harga: number, sign: 1 | -1) {
+export function addSummaryDelta(batch: WriteBatch, uid: string, createdAt: number, kategori: string, harga: number, sign: 1 | -1) {
   const dayId = dayIdFromTimestamp(createdAt);
   const delta = sign * harga;
-  // Nested object, not a dotted "by_category.X" key: setDoc() treats dots in a key as
-  // part of a literal field name (only updateDoc() splits paths), which silently
+  // Nested object, not a dotted "by_category.X" key: set() treats dots in a key as
+  // part of a literal field name (only update() splits paths), which silently
   // created a stray top-level field the Ringkasan view never reads.
-  setDoc(summaryDocRef(uid, dayId), {
+  batch.set(summaryDocRef(uid, dayId), {
     user_id: uid,
     day: dayId,
     total: increment(delta),
     by_category: { [kategori]: increment(delta) },
-  }, { merge: true }).catch((e) => {
-    console.error("daily_summaries write err", e);
-  });
+  }, { merge: true });
 }
 
-// One-off, idempotent recompute of every daily summary from the source-of-truth
-// `transactions` collection. Safe to re-run any time (e.g. if summaries ever drift).
-export async function rebuildAllDailySummaries(uid: string): Promise<number> {
-  const snap = await getDocs(query(collection(db, "transactions"), where("user_id", "==", uid)));
-  const byDay = new Map<string, { total: number; by_category: Record<string, number> }>();
+// True when a day's summary contradicts itself: the category breakdown doesn't add up
+// to the total, or it carries stray dotted fields from an older buggy write.
+export function summaryNeedsRepair(data: DocumentData): boolean {
+  const total = Number(data.total) || 0;
+  const cats = data.by_category && typeof data.by_category === "object" ? Object.values(data.by_category) : [];
+  const sum = cats.reduce((acc: number, v) => acc + (Number(v) || 0), 0);
+  const hasStrayField = Object.keys(data).some((k) => k.startsWith("by_category."));
+  return hasStrayField || sum !== total;
+}
 
-  snap.docs.forEach((d) => {
-    const tx = d.data() as Transaction;
-    const dayId = dayIdFromTimestamp(tx.created_at);
-    const entry = byDay.get(dayId) || { total: 0, by_category: {} };
-    entry.total += tx.harga || 0;
-    entry.by_category[tx.kategori] = (entry.by_category[tx.kategori] || 0) + (tx.harga || 0);
-    byDay.set(dayId, entry);
+// Recomputes ONE day's summary from its transactions (reads only that day's
+// transactions) and overwrites the summary doc. Needs the server, since a partial
+// offline cache would produce wrong totals.
+export async function rebuildDaySummary(uid: string, dayId: string): Promise<void> {
+  const y = Number(dayId.slice(0, 4));
+  const m = Number(dayId.slice(4, 6));
+  const d = Number(dayId.slice(6, 8));
+  const start = new Date(y, m - 1, d).getTime();
+  const end = new Date(y, m - 1, d + 1).getTime() - 1;
+
+  const snap = await getDocsFromServer(query(
+    collection(db, "transactions"),
+    where("user_id", "==", uid),
+    where("created_at", ">=", start),
+    where("created_at", "<=", end),
+    orderBy("created_at", "desc")
+  ));
+
+  let total = 0;
+  const byCategory: Record<string, number> = {};
+  snap.docs.forEach((docSnap) => {
+    const tx = docSnap.data() as Transaction;
+    const harga = tx.harga || 0;
+    total += harga;
+    byCategory[tx.kategori] = (byCategory[tx.kategori] || 0) + harga;
   });
 
-  for (const [dayId, entry] of byDay.entries()) {
-    await setDoc(summaryDocRef(uid, dayId), {
-      user_id: uid,
-      day: dayId,
-      total: entry.total,
-      by_category: entry.by_category,
-    });
-  }
-
-  // Days that used to have transactions but now have none (all deleted) won't
-  // appear in byDay above, so their old summary doc would otherwise be left
-  // stale forever. Zero them out explicitly (there's no delete rule for this
-  // collection - summaries are only ever created/overwritten, never deleted).
-  const existingSummaries = await getDocs(query(collection(db, "daily_summaries"), where("user_id", "==", uid)));
-  for (const d of existingSummaries.docs) {
-    const dayId = d.data().day as string;
-    if (!byDay.has(dayId)) {
-      await setDoc(d.ref, { user_id: uid, day: dayId, total: 0, by_category: {} });
-    }
-  }
-
-  return byDay.size;
+  // No delete rule on this collection: an empty day is overwritten with zeros.
+  await setDoc(summaryDocRef(uid, dayId), { user_id: uid, day: dayId, total, by_category: byCategory });
 }
