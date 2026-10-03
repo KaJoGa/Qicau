@@ -1,0 +1,13 @@
+# Cloudflare Workers static assets headers (copied to dist/ by Vite).
+# HTML (including the SPA fallback for any route) must never be cached, so a new
+# release is picked up immediately; hashed build output and images stay cacheable.
+/*
+  Cache-Control: no-store
+
+/assets/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
+/images/*
+  ! Cache-Control
+  Cache-Control: public, max-age=86400
