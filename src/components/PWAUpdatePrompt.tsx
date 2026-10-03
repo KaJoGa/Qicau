@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { registerSW } from "virtual:pwa-register";
+import { isBusy } from "../lib/sheetsLock";
 
 export const PWAUpdatePrompt: React.FC = () => {
   const [needRefresh, setNeedRefresh] = useState(false);
@@ -36,7 +37,8 @@ export const PWAUpdatePrompt: React.FC = () => {
   useEffect(() => {
     if (!needRefresh) return;
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") {
+      // Don't reload under an in-flight sync/reset; the banner's button still works.
+      if (document.visibilityState === "visible" && !isBusy()) {
         handleUpdate();
       }
     };

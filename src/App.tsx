@@ -10,6 +10,7 @@ import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
 import { syncToSheets, trashSheetsFiles } from "./lib/sheetsSync";
 import { rebuildAllDailySummaries } from "./lib/dailySummary";
+import { runExclusive } from "./lib/sheetsLock";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
 import { OfflineIndicator } from "./components/OfflineIndicator";
@@ -52,6 +53,9 @@ export default function App() {
     setShowSyncConfirm(hasSyncedBefore ? "return" : "first");
   };
 
+  const POPUP_BLOCKED_MSG = "Jendela login Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.";
+  const SHEETS_BUSY_MSG = "Sync atau reset sedang berjalan di tab lain. Tunggu hingga selesai.";
+
   const getSheetsToken = async (): Promise<string> => {
     let token = localStorage.getItem("qicau_sheets_token");
     const tokenExp = localStorage.getItem("qicau_sheets_token_exp");
@@ -77,26 +81,33 @@ export default function App() {
     setIsExporting(true);
 
     try {
-      const token = await getSheetsToken();
+      const ran = await runExclusive(async () => {
+        const token = await getSheetsToken();
 
-      const allSnap = await getDocs(query(
-        collection(db, "transactions"),
-        where("user_id", "==", user.uid),
-        orderBy("created_at", "desc")
-      ));
-      const allTxs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
+        const allSnap = await getDocs(query(
+          collection(db, "transactions"),
+          where("user_id", "==", user.uid),
+          orderBy("created_at", "desc")
+        ));
+        const allTxs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
 
-      if (allTxs.length === 0) {
-        showToast("Tidak ada data untuk disinkronkan.");
-        return;
-      }
+        if (allTxs.length === 0) {
+          showToast("Tidak ada data untuk disinkronkan.");
+          return;
+        }
 
-      const msg = await syncToSheets(allTxs, token, () => {});
-      localStorage.setItem("qicau_sheets_synced_before", "true");
-      showToast(msg || "Sinkronisasi Google Sheets Berhasil!");
+        const msg = await syncToSheets(allTxs, token, () => {});
+        localStorage.setItem("qicau_sheets_synced_before", "true");
+        showToast(msg || "Sinkronisasi Google Sheets Berhasil!");
+      });
+      if (!ran) showToast(SHEETS_BUSY_MSG, 'error');
     } catch (e: any) {
       if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
         console.log("Login popup closed by user");
+        return;
+      }
+      if (e.code === 'auth/popup-blocked') {
+        showToast(POPUP_BLOCKED_MSG, 'error');
         return;
       }
       console.error(e);
@@ -122,32 +133,39 @@ export default function App() {
     if (!user) return;
     setIsExporting(true);
     try {
-      const token = await getSheetsToken();
-      const trashedCount = await trashSheetsFiles(token);
+      const ran = await runExclusive(async () => {
+        const token = await getSheetsToken();
+        const trashedCount = await trashSheetsFiles(token);
 
-      const { writeBatch } = await import("firebase/firestore");
-      const allSnap = await getDocs(query(
-        collection(db, "transactions"),
-        where("user_id", "==", user.uid)
-      ));
+        const { writeBatch } = await import("firebase/firestore");
+        const allSnap = await getDocs(query(
+          collection(db, "transactions"),
+          where("user_id", "==", user.uid)
+        ));
 
-      const batch = writeBatch(db);
-      let i = 0;
-      allSnap.docs.forEach(d => {
-        if (d.data().is_exported) {
-          batch.update(d.ref, { is_exported: false });
-          i++;
+        const batch = writeBatch(db);
+        let i = 0;
+        allSnap.docs.forEach(d => {
+          if (d.data().is_exported) {
+            batch.update(d.ref, { is_exported: false });
+            i++;
+          }
+        });
+        if (i > 0) {
+          await batch.commit();
         }
-      });
-      if (i > 0) {
-        await batch.commit();
-      }
 
-      const trashMsg = trashedCount > 0 ? ` File Sheets lama dipindahkan ke Trash Drive.` : "";
-      showToast(`Berhasil mereset status ${i} transaksi!${trashMsg} Silakan tekan tombol Sync ke Sheets sekarang.`);
+        const trashMsg = trashedCount > 0 ? ` File Sheets lama dipindahkan ke Trash Drive.` : "";
+        showToast(`Berhasil mereset status ${i} transaksi!${trashMsg} Silakan tekan tombol Sync ke Sheets sekarang.`);
+      });
+      if (!ran) showToast(SHEETS_BUSY_MSG, 'error');
     } catch (e: any) {
       if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
         console.log("Login popup closed by user");
+        return;
+      }
+      if (e.code === 'auth/popup-blocked') {
+        showToast(POPUP_BLOCKED_MSG, 'error');
         return;
       }
       console.error(e);
