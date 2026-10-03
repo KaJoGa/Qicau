@@ -198,15 +198,19 @@ export async function generateTransactionContent(apiKey: string, parts: GeminiPa
         continue;
       }
 
-      let cleanError = errorMessage;
+      // The raw upstream message is only logged; the client always gets a friendly one.
+      console.error("Gemini request failed:", errorMessage);
+      let cleanError = "Layanan AI sedang sibuk atau tidak tersedia. Coba lagi sebentar lagi.";
       if (errorMessage.toLowerCase().includes("policy")) {
         cleanError = "Input diblokir oleh sistem keamanan, teks tidak bisa diproses karena melanggar policy.";
       } else if (err.httpStatus === 401 || err.httpStatus === 403 || errorMessage.toLowerCase().includes("api key")) {
         cleanError = "Akses Ditolak: API Key tidak valid atau tidak memiliki akses (Unauthorized).";
       } else if (err.httpStatus === 404) {
         cleanError = "Model tidak ditemukan (404).";
+      } else if (errorMessage.toLowerCase().includes("location")) {
+        cleanError = "Layanan AI belum tersedia dari lokasi atau jaringan Anda saat ini. Coba lagi nanti atau gunakan Formulir Langsung.";
       } else if (err.httpStatus === 400) {
-        cleanError = "Bad Request: Permintaan tidak valid. Detail: " + errorMessage;
+        cleanError = "Permintaan tidak dapat diproses. Coba ulangi dengan kalimat atau rekaman yang lebih jelas.";
       }
       throw new Error(cleanError);
     }
