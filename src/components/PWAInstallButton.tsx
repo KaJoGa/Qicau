@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Share2, PlusSquare, X } from "lucide-react";
 import { usePWAInstall } from "../lib/usePWAInstall";
 
@@ -13,7 +14,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   className = "",
   onInstalledSuccess,
 }) => {
-  const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
+  const { isInstallable, isInstalled, isIOS, isIOSSafari, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
   // If already running as an installed PWA in standalone mode, hide
@@ -37,7 +38,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 
   const renderIOSModal = () => {
     if (!showIOSGuide) return null;
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
         <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 animate-in zoom-in-95">
           <div className="flex items-center justify-between mb-4">
@@ -69,7 +70,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
               <p className="text-xs text-neutral-700 dark:text-neutral-300">
                 {isIOS ? (
                   <>
-                    Ketuk tombol <strong>Bagikan</strong> (<Share2 className="w-3.5 h-3.5 inline mx-0.5" />) pada bilah navigasi Safari.
+                    {isIOSSafari ? (<>Ketuk tombol <strong>Bagikan</strong> (<Share2 className="w-3.5 h-3.5 inline mx-0.5" />) pada bilah navigasi Safari.</>) : (<>Ketuk tombol <strong>Bagikan</strong> (<Share2 className="w-3.5 h-3.5 inline mx-0.5" />) di bilah alamat atau menu browser Anda.</>)}
                   </>
                 ) : (
                   <>
@@ -111,7 +112,8 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
             Mengerti
           </button>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   };
 
