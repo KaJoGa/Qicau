@@ -39,8 +39,8 @@ Standard:
 - Text numbers: "lima ribu" = 5000, "dua puluh lima ribu" = 25000
 
 Indonesian Hokkien slang (very common, must recognize):
-- cepe / cepek = 100
-- gocap = 50
+- cepe / cepek = 100 (literally 100 rupiah, NOT 100000)
+- gocap = 50 (literally 50 rupiah, NOT 50000; do not confuse with goban = 50000)
 - ceceng = 1000
 - goceng = 5000
 - ceban = 10000
@@ -100,6 +100,9 @@ Examples:
 
 5. "Lunch at Warmindo 30 thousand cash"
    → { kategori: "Makan", platform: "Warmindo", harga: 30000, detail: "lunch", payment_method: "Cash", confidence: "high", raw_transcript: "Lunch at Warmindo 30 thousand cash" }
+
+5b. "Bayar parkir gocap" (small-change slang: gocap = 50 rupiah exactly)
+   → { kategori: "Transport", platform: "", harga: 50, detail: "parkir", payment_method: "QRIS", confidence: "high", raw_transcript: "Bayar parkir gocap" }
 
 6. "Halo apa kabar" (no transaction at all)
    → { kategori: "Lainnya", platform: "", harga: 0, detail: "", payment_method: "QRIS", confidence: "low", raw_transcript: "Halo apa kabar" }`;
