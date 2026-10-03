@@ -374,7 +374,7 @@ export default function App() {
         </header>
 
         {/* Global Connectivity Offline/Online Banner */}
-        <OfflineIndicator />
+        <OfflineIndicator inline />
 
         {/* PWA New Version Update Prompt */}
         <PWAUpdatePrompt />
