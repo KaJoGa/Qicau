@@ -29,11 +29,14 @@ export function summaryRangeIds(uid: string, start: Date, end: Date): { startId:
 export function bumpDailySummary(uid: string, createdAt: number, kategori: string, harga: number, sign: 1 | -1) {
   const dayId = dayIdFromTimestamp(createdAt);
   const delta = sign * harga;
+  // Nested object, not a dotted "by_category.X" key: setDoc() treats dots in a key as
+  // part of a literal field name (only updateDoc() splits paths), which silently
+  // created a stray top-level field the Ringkasan view never reads.
   setDoc(summaryDocRef(uid, dayId), {
     user_id: uid,
     day: dayId,
     total: increment(delta),
-    [`by_category.${kategori}`]: increment(delta),
+    by_category: { [kategori]: increment(delta) },
   }, { merge: true }).catch((e) => {
     console.error("daily_summaries write err", e);
   });
