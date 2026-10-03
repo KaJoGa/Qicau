@@ -1,4 +1,5 @@
 import { audioParts, generateTransactionContent, textParts } from "./shared/gemini";
+import { normalizeParsedResult } from "./shared/parsed";
 
 interface Env {
   ASSETS: {
@@ -25,9 +26,8 @@ async function handleParseAudio(request: Request, env: Env): Promise<Response> {
       return jsonError("GEMINI_API_KEY is missing. Set it in the Worker Variables and Secrets.", 500);
     }
 
-    const result = await generateTransactionContent(
-      env.GEMINI_API_KEY,
-      audioParts(audioBase64, mimeType),
+    const result = normalizeParsedResult(
+      await generateTransactionContent(env.GEMINI_API_KEY, audioParts(audioBase64, mimeType)),
     );
     return Response.json({ result });
   } catch (error) {
@@ -49,7 +49,10 @@ async function handleParseText(request: Request, env: Env): Promise<Response> {
       return jsonError("GEMINI_API_KEY is missing. Set it in the Worker Variables and Secrets.", 500);
     }
 
-    const result = await generateTransactionContent(env.GEMINI_API_KEY, textParts(textInput));
+    const result = normalizeParsedResult(
+      await generateTransactionContent(env.GEMINI_API_KEY, textParts(textInput)),
+      textInput,
+    );
     return Response.json({ result });
   } catch (error) {
     console.error(error);

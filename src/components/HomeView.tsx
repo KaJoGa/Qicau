@@ -10,6 +10,7 @@ import { dict } from "../lib/i18n";
 import { EditTransactionModal, EditingTx } from "./EditTransactionModal";
 import { CATEGORY_OPTIONS, PAYMENT_OPTIONS } from "../lib/txOptions";
 import { SearchableSelect } from "./SearchableSelect";
+import { sanitizeParsed } from "../../shared/parsed";
 
 export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["id"], onViewMore?: () => void }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -138,7 +139,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
       }
 
       const parsedStr = data.result.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed: ParsedTransaction = JSON.parse(parsedStr);
+      const parsed: ParsedTransaction = sanitizeParsed(JSON.parse(parsedStr));
 
       if (parsed.confidence === "low") {
         saveLowConfidenceLog(parsed, "voice");
@@ -227,7 +228,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
       }
 
       const parsedStr = data.result.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsed: ParsedTransaction = JSON.parse(parsedStr);
+      const parsed: ParsedTransaction = sanitizeParsed(JSON.parse(parsedStr));
 
       if (parsed.confidence === "low") {
         saveLowConfidenceLog(parsed, "text", manualText);
@@ -601,7 +602,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                 </div>
               </form>
             ) : (
-              <form onSubmit={saveDirectTx} className="flex flex-col gap-4 pb-2">
+              <form onSubmit={saveDirectTx} noValidate className="flex flex-col gap-4 pb-2">
                 <div>
                   <label className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest block mb-1.5">
                     {t.price} (Rp) *
@@ -636,6 +637,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                     type="text" 
                     value={directPlatform} 
                     onChange={(e) => setDirectPlatform(e.target.value)}
+                    maxLength={50}
                     className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3 text-neutral-900 dark:text-white focus:outline-none focus:border-amber-500 dark:focus:border-[#FBBF24] transition-colors text-sm"
                     placeholder="Contoh: Warmindo, Indomaret"
                   />
@@ -667,6 +669,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                     type="text" 
                     value={directDetail} 
                     onChange={(e) => setDirectDetail(e.target.value)}
+                    maxLength={200}
                     className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3 text-neutral-900 dark:text-white focus:outline-none focus:border-amber-500 dark:focus:border-[#FBBF24] transition-colors text-sm"
                     placeholder="Contoh: Makan siang, kopi susu"
                   />

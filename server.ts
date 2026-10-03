@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { audioParts, generateTransactionContent, textParts } from "./shared/gemini";
+import { normalizeParsedResult } from "./shared/parsed";
 
 async function startServer() {
   const app = express();
@@ -27,7 +28,7 @@ async function startServer() {
         return res.status(500).json({ error: "GEMINI_API_KEY is missing. Please set it in Settings > Secrets." });
       }
 
-      const result = await generateTransactionContent(process.env.GEMINI_API_KEY, audioParts(audioBase64, mimeType));
+      const result = normalizeParsedResult(await generateTransactionContent(process.env.GEMINI_API_KEY, audioParts(audioBase64, mimeType)));
       res.json({ result });
     } catch (e: any) {
       console.error(e);
@@ -47,7 +48,7 @@ async function startServer() {
         return res.status(500).json({ error: "GEMINI_API_KEY is missing. Please set it first." });
       }
 
-      const result = await generateTransactionContent(process.env.GEMINI_API_KEY, textParts(textInput));
+      const result = normalizeParsedResult(await generateTransactionContent(process.env.GEMINI_API_KEY, textParts(textInput)), textInput);
       res.json({ result });
     } catch (e: any) {
       console.error(e);
