@@ -46,6 +46,13 @@ function getHeaderRow() {
   };
 }
 
+// Rows are appended with USER_ENTERED, so Sheets would evaluate free text that starts
+// with a formula/operator character. A leading apostrophe stores it as plain text
+// (the apostrophe itself is not shown in the cell).
+function escapeSheetsText(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 // Moves every Qicau-created export spreadsheet (any year) to Google Drive's
 // trash, not permanent delete, so the user can still recover it from Drive
 // for a while if this was pressed by mistake. Returns how many were trashed.
@@ -373,11 +380,11 @@ export async function syncToSheets(
          return [
            hariName,
            `${dateStr}, ${timeStr}`,
-           tx.platform || "",
-           tx.kategori || "",
-           tx.payment_method || "",
+           escapeSheetsText(tx.platform || ""),
+           escapeSheetsText(tx.kategori || ""),
+           escapeSheetsText(tx.payment_method || ""),
            tx.harga,
-           tx.detail || ""
+           escapeSheetsText(tx.detail || "")
          ];
       });
 
