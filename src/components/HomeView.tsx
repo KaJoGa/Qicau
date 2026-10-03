@@ -634,9 +634,12 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest block mb-1.5">
-                    {t.platformName}
-                  </label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest block">
+                      {t.platformName}
+                    </label>
+                    <span className={`text-[10px] font-medium ${directPlatform.length >= 50 ? 'text-red-500 font-bold' : 'text-neutral-400 dark:text-neutral-500'}`}>{directPlatform.length}/50</span>
+                  </div>
                   <input 
                     type="text" 
                     value={directPlatform} 
@@ -666,9 +669,12 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                 />
 
                 <div>
-                  <label className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest block mb-1.5">
-                    {t.additionalNotes} ({t.optional})
-                  </label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-widest block">
+                      {t.additionalNotes} ({t.optional})
+                    </label>
+                    <span className={`text-[10px] font-medium ${directDetail.length >= 200 ? 'text-red-500 font-bold' : 'text-neutral-400 dark:text-neutral-500'}`}>{directDetail.length}/200</span>
+                  </div>
                   <input 
                     type="text" 
                     value={directDetail} 

@@ -12,6 +12,7 @@ import { syncToSheets, trashSheetsFiles } from "./lib/sheetsSync";
 import { runExclusive } from "./lib/sheetsLock";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
+import { INSTALL_TOAST_PENDING_KEY, isStandaloneDisplay } from "./lib/usePWAInstall";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import { PWAUpdatePrompt } from "./components/PWAUpdatePrompt";
 
@@ -39,6 +40,29 @@ export default function App() {
     setToastMessage({ msg, type });
     setTimeout(() => setToastMessage(null), 5000);
   };
+
+  // Install confirmation. The browser often moves focus to the new app window, so a toast
+  // shown only in the original tab goes unseen; the installed window also shows it once on
+  // its first launch (marker expires after 10 minutes).
+  useEffect(() => {
+    const onInstalled = () => {
+      if (document.visibilityState === "visible") showToast("Aplikasi berhasil dipasang di layar utama!");
+    };
+    window.addEventListener("appinstalled", onInstalled);
+    return () => window.removeEventListener("appinstalled", onInstalled);
+  }, []);
+
+  useEffect(() => {
+    if (!user || !isStandaloneDisplay()) return;
+    let installedAt = NaN;
+    try {
+      installedAt = Number(localStorage.getItem(INSTALL_TOAST_PENDING_KEY));
+      localStorage.removeItem(INSTALL_TOAST_PENDING_KEY);
+    } catch { /* storage unavailable */ }
+    if (Number.isFinite(installedAt) && Date.now() - installedAt < 10 * 60 * 1000) {
+      showToast("Aplikasi berhasil dipasang di layar utama!");
+    }
+  }, [user]);
 
   const exportToSheets = () => {
     if (!user || isExporting) return;
@@ -261,7 +285,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white flex flex-col items-center justify-center p-6 text-center relative overflow-hidden transition-colors">
         <div className="absolute top-4 right-4 z-10">
-          <PWAInstallButton variant="header" onInstalledSuccess={() => showToast("Aplikasi berhasil dipasang di layar utama!")} />
+          <PWAInstallButton variant="header" />
         </div>
         <OfflineIndicator />
         <PWAUpdatePrompt />
@@ -339,7 +363,7 @@ export default function App() {
             <span className="font-semibold tracking-tight text-lg">Qicau</span>
           </div>
           <div className="flex items-center gap-2 justify-end">
-            <PWAInstallButton variant="header" onInstalledSuccess={() => showToast("Aplikasi berhasil dipasang di layar utama!")} />
+            <PWAInstallButton variant="header" />
             <button onClick={() => setShowSettings(true)} className="p-2 -mr-2 text-neutral-500 dark:text-neutral-400 hover:text-black dark:hover:text-white transition-colors" title="Pengaturan">
               <Settings className="w-5 h-5" />
             </button>
@@ -444,7 +468,7 @@ export default function App() {
 
                     <div className="space-y-3 pt-2">
                       <label className="text-sm font-semibold text-neutral-500 dark:text-neutral-400">Aplikasi</label>
-                      <PWAInstallButton variant="settings" onInstalledSuccess={() => showToast("Aplikasi berhasil dipasang!")} />
+                      <PWAInstallButton variant="settings" />
                     </div>
                   </div>
                 </div>
