@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { User } from "firebase/auth";
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, limit, startAfter, getDocs, getCountFromServer, updateDoc, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { bumpDailySummary } from "../lib/dailySummary";
 import { Transaction, ParsedTransaction } from "../types";
@@ -39,7 +39,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
   const itemsPerPage = 30;
 
   // Build base query constraints with server-side date filter
-  const buildBaseConstraints = () => {
+  const buildBaseConstraints = (withOrder = true) => {
     const constraints: any[] = [where("user_id", "==", user.uid)];
     const now = Date.now();
     if (filterDate === "7d") {
@@ -49,9 +49,23 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
     } else if (filterDate === "3m") {
       constraints.push(where("created_at", ">=", now - 90 * 24 * 60 * 60 * 1000));
     }
-    constraints.push(orderBy("created_at", "desc"));
+    if (withOrder) constraints.push(orderBy("created_at", "desc"));
     return constraints;
   };
+
+  // Server-side total for the active date filter, so the page indicator can show the
+  // real page count. Aggregation counts bill ~1 read per 1000 matching docs.
+  const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [countVersion, setCountVersion] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setTotalCount(null);
+    getCountFromServer(query(collection(db, "transactions"), ...buildBaseConstraints(false)))
+      .then((snap) => { if (!cancelled) setTotalCount(snap.data().count); })
+      .catch(() => { /* offline or unavailable: indicator falls back to "n+" */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.uid, filterDate, countVersion]);
 
   // Real-time listener for first page; resets on filter change
   useEffect(() => {
@@ -155,6 +169,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
         await deleteDoc(doc(db, "transactions", txToDelete));
         // Manually remove from local state since onSnapshot only tracks first page
         setTransactions(prev => prev.filter(tx => tx.id !== txToDelete));
+        setCountVersion(v => v + 1);
         setTxToDelete(null);
         if (selectedTx && selectedTx.id === txToDelete) {
           setSelectedTx(null);
@@ -180,6 +195,13 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
   );
 
   const cachedPages = Math.max(1, Math.ceil(filteredTxs.length / itemsPerPage));
+  // All loaded -> exact. More to load: real total when the category filter is off,
+  // otherwise only a lower bound ("n+") because that filter runs client-side.
+  const totalPagesLabel = !hasMore
+    ? String(cachedPages)
+    : filterCat === "All" && totalCount !== null
+      ? String(Math.max(Math.ceil(totalCount / itemsPerPage), cachedPages))
+      : `${cachedPages}+`;
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedTxs = filteredTxs.slice(startIndex, startIndex + itemsPerPage);
 
@@ -209,7 +231,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, isRe
           <ChevronLeft className="w-5 h-5 text-neutral-600 dark:text-neutral-400" />
         </button>
         <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
-          {currentPage} / {cachedPages + (hasMore ? 1 : 0)}
+          {currentPage} / {totalPagesLabel}
         </span>
         <button
           onClick={goToNextPage}
