@@ -30,7 +30,6 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [editingTx, setEditingTx] = useState<EditingTx | null>(null);
   const [txToDelete, setTxToDelete] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -158,29 +157,31 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
     setEditingTx(null);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (txToDelete) {
-      setIsDeleting(true);
-      const deletedTx = transactions.find(tx => tx.id === txToDelete);
-      try {
-        const batch = writeBatch(db);
-        batch.delete(doc(db, "transactions", txToDelete));
-        if (deletedTx) {
-          addSummaryDelta(batch, user.uid, deletedTx.created_at, deletedTx.kategori, deletedTx.harga, -1);
-        }
-        await batch.commit();
-        // Manually remove from local state since onSnapshot only tracks first page
-        setTransactions(prev => prev.filter(tx => tx.id !== txToDelete));
-        setCountVersion(v => v + 1);
-        setTxToDelete(null);
-        if (selectedTx && selectedTx.id === txToDelete) {
-          setSelectedTx(null);
-        }
-      } catch (e) {
-        console.error("Gagal menghapus transaksi", e);
-      } finally {
-        setIsDeleting(false);
+  const handleDeleteConfirm = () => {
+    if (!txToDelete) return;
+    const id = txToDelete;
+    const deletedTx = transactions.find(tx => tx.id === id);
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "transactions", id));
+    if (deletedTx) {
+      addSummaryDelta(batch, user.uid, deletedTx.created_at, deletedTx.kategori, deletedTx.harga, -1);
+    }
+    // Not awaited: offline, commit() only settles once the server acknowledges, which
+    // would freeze this dialog. The write is queued locally and the UI updates at once.
+    batch.commit().catch((e) => {
+      console.error("Gagal menghapus transaksi", e);
+      showToast("Gagal menghapus transaksi: " + e.message, 'error');
+      if (deletedTx) {
+        setTransactions(prev => prev.some(tx => tx.id === id) ? prev : [...prev, deletedTx].sort((a, b) => b.created_at - a.created_at));
       }
+      setCountVersion(v => v + 1);
+    });
+    // Manually remove from local state since onSnapshot only tracks first page
+    setTransactions(prev => prev.filter(tx => tx.id !== id));
+    setCountVersion(v => v + 1);
+    setTxToDelete(null);
+    if (selectedTx && selectedTx.id === id) {
+      setSelectedTx(null);
     }
   };
 
@@ -550,10 +551,9 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
               </button>
               <button 
                 onClick={handleDeleteConfirm}
-                disabled={isDeleting}
-                className={`flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-medium rounded-xl transition-colors flex items-center justify-center ${isDeleting ? 'opacity-80 cursor-not-allowed' : ''}`}
+                className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-medium rounded-xl transition-colors flex items-center justify-center"
               >
-                {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Hapus'}
+                Hapus
               </button>
             </div>
           </div>
