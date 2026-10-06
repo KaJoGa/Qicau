@@ -142,12 +142,16 @@ export async function syncToSheets(
   const categories = Array.from(new Set(transactions.map(tx => tx.kategori || "Lainnya")));
   const paymentMethods = Array.from(new Set(transactions.map(tx => tx.payment_method || "QRIS")));
 
-  const batchUpdateFirestore = writeBatch(db);
-  let hasUpdates = false;
   let totalSynced = 0;
 
   for (const yearStr of Object.keys(groupedAll)) {
     const year = parseInt(yearStr);
+    // One batch per year, committed as soon as this year's sheet is done (see below)
+    // instead of one batch for everything at the very end. If the connection drops
+    // partway through a later year, the earlier year's rows are already marked
+    // exported and won't be appended again on retry.
+    const batchUpdateFirestore = writeBatch(db);
+    let hasUpdatesThisYear = false;
     const fileName = `Qicau_Export_${year}`;
     
     log(`Mencari file ${fileName} di Google Drive...`);
@@ -637,7 +641,7 @@ export async function syncToSheets(
       txs.forEach(tx => {
         const docRef = doc(db, "transactions", tx.id);
         batchUpdateFirestore.update(docRef, { is_exported: true });
-        hasUpdates = true;
+        hasUpdatesThisYear = true;
         totalSynced++;
       });
     }
@@ -891,13 +895,18 @@ export async function syncToSheets(
     }
 
     log(`File Google Sheets untuk tahun ${year} sudah terupdate.`);
+
+    // Committed right away, per year: a failure in a later year can't make this
+    // year's already-written rows get appended again on retry.
+    if (hasUpdatesThisYear) {
+      log(`Menyimpan status sinkronisasi tahun ${year} ke database...`);
+      await batchUpdateFirestore.commit();
+    }
   }
 
-  if (hasUpdates) {
-    log("Menyimpan status sinkronisasi ke database...");
-    await batchUpdateFirestore.commit();
+  if (totalSynced > 0) {
     return `Berhasil menyinkronkan ${totalSynced} transaksi baru!`;
   }
-  
+
   return "Semua data sudah tersinkronisasi pada Google Sheets (tidak ada transaksi baru).";
 }
