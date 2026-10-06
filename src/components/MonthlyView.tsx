@@ -92,7 +92,10 @@ export function MonthlyView({ user, t, showToast }: { user: User; t: typeof dict
   const now = new Date();
   const currentMonthLabel = `${t.monthLabels[now.getMonth() as keyof typeof t.monthLabels]} ${now.getFullYear()}`;
 
-  const sortedCats = Object.entries(catTotals).sort((a: [string, number], b: [string, number]) => b[1] - a[1]);
+  // Deleting a transaction leaves its category in the summary at 0, so hide those here.
+  const sortedCats = Object.entries(catTotals)
+    .filter(([, amount]: [string, number]) => amount > 0)
+    .sort((a: [string, number], b: [string, number]) => b[1] - a[1]);
   
   const pieData = sortedCats.map(([name, value]) => ({
     name: t.categories[name as keyof typeof t.categories] || name,
