@@ -38,6 +38,8 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
   // Build base query constraints with server-side date filter
   const buildBaseConstraints = (withOrder = true) => {
     const constraints: any[] = [where("user_id", "==", user.uid)];
+    // Category is filtered in the query (not on the client), so pages and totals stay exact.
+    if (filterCat !== "All") constraints.push(where("kategori", "==", filterCat));
     const now = Date.now();
     if (filterDate === "7d") {
       constraints.push(where("created_at", ">=", now - 7 * 24 * 60 * 60 * 1000));
@@ -62,7 +64,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
       .catch(() => { /* offline or unavailable: indicator falls back to "n+" */ });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.uid, filterDate, countVersion]);
+  }, [user.uid, filterDate, filterCat, countVersion]);
 
   // Real-time listener for first page; resets on filter change
   useEffect(() => {
@@ -91,7 +93,7 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
 
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user.uid, filterDate]);
+  }, [user.uid, filterDate, filterCat]);
 
   // Load next chunk of older transactions (one-shot, appends to state)
   const loadMore = async (): Promise<number> => {
@@ -189,17 +191,15 @@ export function HistoryView({ user, t, isExporting, onExport, onForceReset, show
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(num);
   };
 
-  // Category filter (client-side); date filter already applied server-side
-  const filteredTxs = transactions.filter(tx =>
-    filterCat === "All" || tx.kategori === filterCat
-  );
+  // Both filters are applied in the query, so every loaded row already matches.
+  const filteredTxs = transactions;
 
   const cachedPages = Math.max(1, Math.ceil(filteredTxs.length / itemsPerPage));
-  // All loaded -> exact. More to load: real total when the category filter is off,
-  // otherwise only a lower bound ("n+") because that filter runs client-side.
+  // Exact total from the server (count respects the category and date filters).
+  // Only falls back to "n+" while that count is unavailable (offline, still loading).
   const totalPagesLabel = !hasMore
     ? String(cachedPages)
-    : filterCat === "All" && totalCount !== null
+    : totalCount !== null
       ? String(Math.max(Math.ceil(totalCount / itemsPerPage), cachedPages))
       : `${cachedPages}+`;
   const startIndex = (currentPage - 1) * itemsPerPage;
