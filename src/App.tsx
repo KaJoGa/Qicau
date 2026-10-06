@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { signInWithPopup, onAuthStateChanged, User, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, collection, query, where, orderBy, getDocs } from "firebase/firestore";
+import { doc, setDoc, collection, query, where, orderBy, getDocs, getDocsFromServer } from "firebase/firestore";
 import { auth, googleProvider, db } from "./lib/firebase";
 import { HomeView } from "./components/HomeView";
 import { HistoryView } from "./components/HistoryView";
@@ -76,6 +76,10 @@ export default function App() {
 
   const POPUP_BLOCKED_MSG = "Jendela login Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.";
   const SHEETS_BUSY_MSG = "Sync atau reset sedang berjalan di tab lain. Tunggu hingga selesai.";
+  const OFFLINE_SYNC_MSG = "Anda sedang offline. Sambungkan internet untuk Sync ke Sheets.";
+  const OFFLINE_RESET_MSG = "Anda sedang offline. Sambungkan internet untuk reset ekspor.";
+  const CONNECTION_LOST_MSG = "Koneksi terputus saat proses berjalan. Coba lagi saat online.";
+  const isNetworkError = (e: any) => !navigator.onLine || e?.code === 'auth/network-request-failed' || e?.code === 'unavailable' || (e instanceof TypeError && /fetch/i.test(e.message));
   const LOGIN_CLOSED_MSG = "Sync dibatalkan karena login Google ditutup sebelum selesai. Tekan Sync lagi untuk mencoba ulang.";
   const RESET_LOGIN_CLOSED_MSG = "Reset dibatalkan karena login Google ditutup sebelum selesai. Tekan Reset Ekspor lagi untuk mencoba ulang.";
 
@@ -101,6 +105,11 @@ export default function App() {
   const runExportToSheets = async () => {
     setShowSyncConfirm(false);
     if (!user) return;
+    // Checked again here: the user may have gone offline while the confirm dialog was open.
+    if (!navigator.onLine) {
+      showToast(OFFLINE_SYNC_MSG, 'error');
+      return;
+    }
     setIsExporting(true);
 
     try {
@@ -139,6 +148,10 @@ export default function App() {
         showToast(POPUP_BLOCKED_MSG, 'error');
         return;
       }
+      if (isNetworkError(e)) {
+        showToast(CONNECTION_LOST_MSG, 'error');
+        return;
+      }
       console.error(e);
       localStorage.removeItem("qicau_sheets_token");
       localStorage.removeItem("qicau_sheets_token_exp");
@@ -160,6 +173,10 @@ export default function App() {
   const runForceResetExport = async () => {
     setShowResetConfirm(false);
     if (!user) return;
+    if (!navigator.onLine) {
+      showToast(OFFLINE_RESET_MSG, 'error');
+      return;
+    }
     setIsExporting(true);
     try {
       const ran = await runExclusive(async () => {
@@ -167,7 +184,7 @@ export default function App() {
         const trashedCount = await trashSheetsFiles(token);
 
         const { writeBatch } = await import("firebase/firestore");
-        const allSnap = await getDocs(query(
+        const allSnap = await getDocsFromServer(query(
           collection(db, "transactions"),
           where("user_id", "==", user.uid),
           where("created_at", ">=", writableFromTimestamp())
@@ -197,6 +214,10 @@ export default function App() {
       }
       if (e.code === 'auth/popup-blocked') {
         showToast(POPUP_BLOCKED_MSG, 'error');
+        return;
+      }
+      if (isNetworkError(e)) {
+        showToast(CONNECTION_LOST_MSG, 'error');
         return;
       }
       console.error(e);
