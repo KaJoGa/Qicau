@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { signInWithPopup, onAuthStateChanged, User, GoogleAuthProvider } from "firebase/auth";
-import { doc, setDoc, collection, query, where, orderBy, getDocs, getDocsFromServer } from "firebase/firestore";
+import { doc, setDoc, deleteField, collection, query, where, orderBy, getDocs, getDocsFromServer } from "firebase/firestore";
 import { auth, googleProvider, db } from "./lib/firebase";
 import { HomeView } from "./components/HomeView";
 import { HistoryView } from "./components/HistoryView";
@@ -79,7 +79,7 @@ export default function App() {
   const OFFLINE_SYNC_MSG = "Anda sedang offline. Sambungkan internet untuk Sync ke Sheets.";
   const OFFLINE_RESET_MSG = "Anda sedang offline. Sambungkan internet untuk reset ekspor.";
   const CONNECTION_LOST_MSG = "Koneksi terputus saat proses berjalan. Coba lagi saat online.";
-  const isNetworkError = (e: any) => !navigator.onLine || e?.code === 'auth/network-request-failed' || e?.code === 'unavailable' || (e instanceof TypeError && /fetch/i.test(e.message));
+  const isNetworkError = (e: any) => !navigator.onLine || e?.code === 'auth/network-request-failed' || e?.code === 'unavailable' || e?.code === 'sync/timeout' || (e instanceof TypeError && /fetch/i.test(e.message));
   const LOGIN_CLOSED_MSG = "Sync dibatalkan karena login Google ditutup sebelum selesai. Tekan Sync lagi untuk mencoba ulang.";
   const RESET_LOGIN_CLOSED_MSG = "Reset dibatalkan karena login Google ditutup sebelum selesai. Tekan Reset Ekspor lagi untuk mencoba ulang.";
 
@@ -133,7 +133,7 @@ export default function App() {
           return;
         }
 
-        const msg = await syncToSheets(allTxs, token, () => {});
+        const msg = await syncToSheets(allTxs, token, () => {}, user.uid);
         localStorage.setItem("qicau_sheets_synced_before", "true");
         showToast(msg || "Sinkronisasi Google Sheets Berhasil!");
       });
@@ -182,6 +182,8 @@ export default function App() {
       const ran = await runExclusive(async () => {
         const token = await getSheetsToken();
         const trashedCount = await trashSheetsFiles(token);
+        // Any interrupted-sync record refers to files that were just trashed.
+        await setDoc(doc(db, "users", user.uid), { sheets_pending: deleteField() }, { merge: true });
 
         const { writeBatch } = await import("firebase/firestore");
         const allSnap = await getDocsFromServer(query(

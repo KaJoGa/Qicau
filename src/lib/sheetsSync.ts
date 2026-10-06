@@ -1,6 +1,6 @@
 import { Transaction } from "../types";
 import { db } from "./firebase";
-import { doc, writeBatch } from "firebase/firestore";
+import { doc, writeBatch, setDoc, updateDoc, getDocFromServer, deleteField } from "firebase/firestore";
 
 const INDONESIAN_MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
@@ -107,10 +107,24 @@ export async function trashSheetsFiles(token: string): Promise<number> {
   return trashedCount;
 }
 
+// Firestore writes don't reject while offline, they just wait. The limit stops a dropped
+// connection from leaving Sync stuck; the pending record below lets the next Sync finish.
+const FIRESTORE_TIMEOUT_MS = 20000;
+function withTimeout<T>(promise: Promise<T>, ms = FIRESTORE_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(Object.assign(new Error("Firestore timeout"), { code: "sync/timeout" })), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
 export async function syncToSheets(
   transactions: Transaction[],
   token: string, 
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  uid?: string
 ) {
   const log = (msg: string) => {
     console.log(msg);
@@ -152,6 +166,16 @@ export async function syncToSheets(
   const paymentMethods = Array.from(new Set(transactions.map(tx => tx.payment_method || "QRIS")));
 
   let totalSynced = 0;
+
+  // Pending record from an interrupted Sync, one entry per year, kept on the user doc.
+  const userRef = doc(db, "users", uid || "");
+  const userSnap = await withTimeout(getDocFromServer(userRef));
+  const pendingByYear: Record<string, { spreadsheetId: string; tabs: Record<string, string[]> }> = userSnap.data()?.sheets_pending || {};
+  const staleYears = Object.keys(pendingByYear).filter(y => isYearLocked(Number(y)));
+  if (staleYears.length > 0) {
+    // Locked years are never touched again, so their leftover record can go.
+    await withTimeout(updateDoc(userRef, Object.fromEntries(staleYears.map(y => [`sheets_pending.${y}`, deleteField()]))));
+  }
 
   for (const yearStr of Object.keys(groupedAll)) {
     const year = parseInt(yearStr);
@@ -225,6 +249,38 @@ export async function syncToSheets(
     const existingCharts = summarySheetInfo?.charts || [];
     const hasExistingBandings = (summarySheetInfo?.bandedRanges?.length || 0) > 0;
 
+    // Recovery: an earlier Sync may have appended rows for this year and then stopped before
+    // saving its flags. Those rows carry the transaction id in column H, so anything found
+    // there is marked exported instead of being appended again.
+    const pending = pendingByYear[String(year)];
+    const hadPending = !!pending;
+    const presentIds = new Set<string>();
+    const recoverableTabs = pending && !isNewFile && pending.spreadsheetId === spreadsheetId
+      ? Object.keys(pending.tabs || {}).filter(t => existingTabs.includes(t))
+      : [];
+    if (recoverableTabs.length > 0) {
+      log(`Memeriksa sisa sinkronisasi sebelumnya (${recoverableTabs.length} tab)...`);
+      const ranges = recoverableTabs.map(t => `ranges=${encodeURIComponent(`'${t}'!H:H`)}`).join("&");
+      const idRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${ranges}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (!idRes.ok) {
+        const err = await idRes.json();
+        throw new Error(`Gagal membaca sisa sinkronisasi: ${err.error?.message}`);
+      }
+      const idData = await idRes.json();
+      (idData.valueRanges || []).forEach((vr: any) => (vr.values || []).forEach((row: any[]) => {
+        if (row[0]) presentIds.add(String(row[0]));
+      }));
+    }
+    Object.values(groupedAll[year]).flat().forEach(tx => {
+      if (!tx.is_exported && presentIds.has(tx.id)) {
+        batchUpdateFirestore.update(doc(db, "transactions", tx.id), { is_exported: true });
+        hasUpdatesThisYear = true;
+        totalSynced++;
+      }
+    });
+
     // Determine which transactions to sync for this year
     const months = Object.keys(groupedAll[year]);
     const txsToSyncByMonth: Record<string, Transaction[]> = {};
@@ -234,7 +290,7 @@ export async function syncToSheets(
       if (isNewFile) {
         txsToSyncByMonth[month] = groupedAll[year][month];
       } else {
-        txsToSyncByMonth[month] = groupedAll[year][month].filter(tx => !tx.is_exported);
+        txsToSyncByMonth[month] = groupedAll[year][month].filter(tx => !tx.is_exported && !presentIds.has(tx.id));
       }
     }
 
@@ -252,6 +308,16 @@ export async function syncToSheets(
       (checkData.valueRanges || []).forEach((vr: any, i: number) => {
         layoutByTab[existingToCheck[i]] = { a1: vr.values?.[0]?.[0] || "", a2: vr.values?.[1]?.[0] || "" };
       });
+    }
+    // Record what this year is about to append BEFORE the first append. If the connection
+    // drops, the next Sync reads column H of these tabs and finishes without duplicates.
+    const pendingTabs: Record<string, string[]> = {};
+    months.forEach(m => {
+      const txs = txsToSyncByMonth[m] || [];
+      if (txs.length > 0) pendingTabs[`${m} ${year}`] = txs.map(tx => tx.id);
+    });
+    if (Object.keys(pendingTabs).length > 0) {
+      await withTimeout(setDoc(userRef, { sheets_pending: { [String(year)]: { spreadsheetId, tabs: pendingTabs } } }, { merge: true }));
     }
     const sideRequests: any[] = [];
 
@@ -316,6 +382,14 @@ export async function syncToSheets(
                  range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 7 },
                  properties: { pixelSize: 150 },
                  fields: "pixelSize"
+               }
+             },
+             // Column H holds the transaction id used for recovery; keep it out of sight
+             {
+               updateDimensionProperties: {
+                 range: { sheetId: newSheetId, dimension: "COLUMNS", startIndex: 7, endIndex: 8 },
+                 properties: { hiddenByUser: true },
+                 fields: "hiddenByUser"
                }
              },
              // Banding starts at header row 1
@@ -414,12 +488,13 @@ export async function syncToSheets(
            escapeSheetsText(tx.kategori || ""),
            escapeSheetsText(tx.payment_method || ""),
            tx.harga,
-           escapeSheetsText(tx.detail || "")
+           escapeSheetsText(tx.detail || ""),
+           tx.id
          ];
       });
 
       mark(`${tabName}: persiapan (buat/format tab, cek migrasi)`);
-      const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${tabName}'!A:G:append?valueInputOption=USER_ENTERED`, {
+      const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${tabName}'!A:H:append?valueInputOption=USER_ENTERED`, {
         method: 'POST',
         headers: {
           "Authorization": `Bearer ${token}`,
@@ -656,7 +731,7 @@ export async function syncToSheets(
     }
 
     // F: nothing changed in an existing year, so its Summary is already correct
-    if (!isNewFile && !hasUpdatesThisYear) {
+    if (!isNewFile && !hasUpdatesThisYear && !hadPending) {
       log(`Tahun ${year}: tidak ada perubahan, Summary dilewati.`);
       continue;
     }
@@ -915,9 +990,11 @@ export async function syncToSheets(
 
     // Committed right away, per year: a failure in a later year can't make this
     // year's already-written rows get appended again on retry.
-    if (hasUpdatesThisYear) {
+    // Flags and the cleared pending record go in one batch: both land or neither does.
+    if (hasUpdatesThisYear || hadPending) {
       log(`Menyimpan status sinkronisasi tahun ${year} ke database...`);
-      await batchUpdateFirestore.commit();
+      batchUpdateFirestore.set(userRef, { sheets_pending: { [String(year)]: deleteField() } }, { merge: true });
+      await withTimeout(batchUpdateFirestore.commit());
       mark(`${year}: commit flag Firestore`);
     }
   }
