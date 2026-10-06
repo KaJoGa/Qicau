@@ -53,6 +53,22 @@ function escapeSheetsText(value: string): string {
   return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
+// Only the current year stays writable, plus the previous year on Jan 1 itself.
+// From Jan 2 onward a past year's spreadsheet and its transactions are left alone.
+export function firstWritableYear(now: Date = new Date()): number {
+  const y = now.getFullYear();
+  return now < new Date(y, 0, 2) ? y - 1 : y;
+}
+
+export function isYearLocked(year: number, now: Date = new Date()): boolean {
+  return year < firstWritableYear(now);
+}
+
+// Lower bound for queries that only need writable years (timestamp of Jan 1).
+export function writableFromTimestamp(now: Date = new Date()): number {
+  return new Date(firstWritableYear(now), 0, 1).getTime();
+}
+
 // Moves every Qicau-created export spreadsheet (any year) to Google Drive's
 // trash, not permanent delete, so the user can still recover it from Drive
 // for a while if this was pressed by mistake. Returns how many were trashed.
@@ -66,9 +82,13 @@ export async function trashSheetsFiles(token: string): Promise<number> {
     throw new Error(`Drive API Error: ${err.error?.message}`);
   }
   const searchData = await searchRes.json();
-  const files: { id: string }[] = searchData.files || [];
+  const files: { id: string; name?: string }[] = searchData.files || [];
+  let trashedCount = 0;
 
   for (const file of files) {
+    // Only files for writable years; a locked past-year sheet is never touched.
+    const match = file.name?.match(/^Qicau_Export_(\d{4})$/);
+    if (!match || isYearLocked(Number(match[1]))) continue;
     const trashRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}`, {
       method: "PATCH",
       headers: {
@@ -81,9 +101,10 @@ export async function trashSheetsFiles(token: string): Promise<number> {
       const err = await trashRes.json();
       throw new Error(`Drive API Error: ${err.error?.message}`);
     }
+    trashedCount++;
   }
 
-  return files.length;
+  return trashedCount;
 }
 
 export async function syncToSheets(
@@ -108,6 +129,8 @@ export async function syncToSheets(
   transactions.forEach(tx => {
     const d = new Date(tx.created_at);
     const year = d.getFullYear();
+    // Locked past years are skipped entirely: no sheet writes, no is_exported updates.
+    if (isYearLocked(year)) return;
     const monthName = getMonthName(d);
     
     if (!groupedAll[year]) groupedAll[year] = {};

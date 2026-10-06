@@ -8,7 +8,7 @@ import { MonthlyView } from "./components/MonthlyView";
 import { NotebookPen, History, BarChart3, Settings, Mic, Database, LogOut, Sun, Moon, Monitor, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { dict } from "./lib/i18n";
 import { Transaction } from "./types";
-import { syncToSheets, trashSheetsFiles } from "./lib/sheetsSync";
+import { syncToSheets, trashSheetsFiles, writableFromTimestamp } from "./lib/sheetsSync";
 import { runExclusive } from "./lib/sheetsLock";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { PWAInstallButton } from "./components/PWAInstallButton";
@@ -107,9 +107,11 @@ export default function App() {
       const ran = await runExclusive(async () => {
         const token = await getSheetsToken();
 
+        // Only writable years are read: locked past years are never exported again.
         const allSnap = await getDocs(query(
           collection(db, "transactions"),
           where("user_id", "==", user.uid),
+          where("created_at", ">=", writableFromTimestamp()),
           orderBy("created_at", "desc")
         ));
         const allTxs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
@@ -164,7 +166,8 @@ export default function App() {
         const { writeBatch } = await import("firebase/firestore");
         const allSnap = await getDocs(query(
           collection(db, "transactions"),
-          where("user_id", "==", user.uid)
+          where("user_id", "==", user.uid),
+          where("created_at", ">=", writableFromTimestamp())
         ));
 
         const batch = writeBatch(db);
