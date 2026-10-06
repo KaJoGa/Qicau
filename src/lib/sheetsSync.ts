@@ -117,6 +117,15 @@ export async function syncToSheets(
     if (onProgress) onProgress(msg);
   };
 
+  // [sync-timing] temporary: logs how long each step takes, to find the slow part.
+  const tStart = performance.now();
+  let tLast = tStart;
+  const mark = (label: string) => {
+    const now = performance.now();
+    console.log(`[sync-timing] ${label}: ${Math.round(now - tLast)} ms (total ${Math.round(now - tStart)} ms)`);
+    tLast = now;
+  };
+
   if (transactions.length === 0) {
     return "Tidak ada transaksi untuk disinkronisasi.";
   }
@@ -166,6 +175,7 @@ export async function syncToSheets(
        throw new Error(`Drive API Error: ${err.error?.message}`);
     }
     const searchData = await searchRes.json();
+    mark(`${year}: cari file di Drive`);
     let spreadsheetId = searchData.files && searchData.files.length > 0 ? searchData.files[0].id : null;
     let isNewFile = false;
 
@@ -204,6 +214,7 @@ export async function syncToSheets(
       headers: { "Authorization": `Bearer ${token}` }
     });
     const spreadData = await getRes.json();
+    mark(`${year}: baca metadata spreadsheet`);
     const sheetIdMap: Record<string, number> = {};
     (spreadData.sheets || []).forEach((s: any) => {
       sheetIdMap[s.properties.title] = s.properties.sheetId;
@@ -415,6 +426,7 @@ export async function syncToSheets(
          ];
       });
 
+      mark(`${tabName}: persiapan (buat/format tab, cek migrasi)`);
       const appendRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${tabName}'!A:G:append?valueInputOption=USER_ENTERED`, {
         method: 'POST',
         headers: {
@@ -626,6 +638,7 @@ export async function syncToSheets(
         });
       }
 
+      mark(`${tabName}: append baris`);
       const sideRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
         method: "POST",
         headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
@@ -880,6 +893,7 @@ export async function syncToSheets(
       });
     }
 
+    mark(`${year}: siapkan Summary`);
     const summaryUpdateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
       method: "POST",
       headers: {
@@ -894,6 +908,7 @@ export async function syncToSheets(
        throw new Error(`SummaryReq Error: ${err.error?.message || JSON.stringify(err)}`);
     }
 
+    mark(`${year}: batchUpdate Summary`);
     log(`File Google Sheets untuk tahun ${year} sudah terupdate.`);
 
     // Committed right away, per year: a failure in a later year can't make this
@@ -901,9 +916,11 @@ export async function syncToSheets(
     if (hasUpdatesThisYear) {
       log(`Menyimpan status sinkronisasi tahun ${year} ke database...`);
       await batchUpdateFirestore.commit();
+      mark(`${year}: commit flag Firestore`);
     }
   }
 
+  console.log(`[sync-timing] selesai syncToSheets: ${Math.round(performance.now() - tStart)} ms`);
   if (totalSynced > 0) {
     return `Berhasil menyinkronkan ${totalSynced} transaksi baru!`;
   }

@@ -105,7 +105,9 @@ export default function App() {
 
     try {
       const ran = await runExclusive(async () => {
+        const tStart = performance.now();
         const token = await getSheetsToken();
+        console.log(`[sync-timing] login/token: ${Math.round(performance.now() - tStart)} ms`);
 
         // Only writable years are read: locked past years are never exported again.
         const allSnap = await getDocs(query(
@@ -115,6 +117,7 @@ export default function App() {
           orderBy("created_at", "desc")
         ));
         const allTxs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
+        console.log(`[sync-timing] baca Firestore (${allTxs.length} transaksi): ${Math.round(performance.now() - tStart)} ms kumulatif`);
 
         if (allTxs.length === 0) {
           showToast("Tidak ada data untuk disinkronkan.");
