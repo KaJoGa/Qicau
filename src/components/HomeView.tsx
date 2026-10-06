@@ -19,6 +19,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
   const [manualMode, setManualMode] = useState<"ai" | "direct">("ai");
   const [manualText, setManualText] = useState("");
   const [directHarga, setDirectHarga] = useState<number | "">("");
+  const [directHargaError, setDirectHargaError] = useState("");
   const [directPlatform, setDirectPlatform] = useState("");
   const [directKategori, setDirectKategori] = useState("Makan");
   const [directPaymentMethod, setDirectPaymentMethod] = useState("QRIS");
@@ -263,9 +264,10 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
   const saveDirectTx = (e: React.FormEvent) => {
     e.preventDefault();
     if (!directHarga || Number(directHarga) <= 0) {
-      alert("Harap masukkan jumlah pengeluaran.");
+      setDirectHargaError("Jumlah pengeluaran wajib diisi.");
       return;
     }
+    setDirectHargaError("");
     const numHarga = Math.min(Number(directHarga), 999999999);
     const parsed: ParsedTransaction = {
       kategori: directKategori || "Lainnya",
@@ -616,6 +618,7 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                     value={directHarga ? formatIdr(Number(directHarga)).replace("Rp", "").trim() : ""} 
                     onChange={(e) => {
                       const rawVal = e.target.value.replace(/\D/g, "");
+                      setDirectHargaError("");
                       if (!rawVal) {
                         setDirectHarga("");
                         return;
@@ -626,11 +629,15 @@ export function HomeView({ user, t, onViewMore }: { user: User; t: typeof dict["
                       }
                       setDirectHarga(num);
                     }}
-                    className="w-full bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl px-4 py-3 text-neutral-900 dark:text-white focus:outline-none focus:border-amber-500 dark:focus:border-[#FBBF24] transition-colors text-sm"
+                    className={`w-full bg-neutral-50 dark:bg-neutral-950 border rounded-xl px-4 py-3 text-neutral-900 dark:text-white focus:outline-none transition-colors text-sm ${directHargaError ? 'border-red-500 focus:border-red-500' : 'border-neutral-200 dark:border-neutral-800 focus:border-amber-500 dark:focus:border-[#FBBF24]'}`}
                     placeholder="Contoh: 25.000"
                     required
                     autoFocus
+                    aria-invalid={!!directHargaError}
                   />
+                  {directHargaError && (
+                    <p className="text-xs text-red-500 mt-1.5">{directHargaError}</p>
+                  )}
                 </div>
 
                 <div>
