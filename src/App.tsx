@@ -76,6 +76,8 @@ export default function App() {
 
   const POPUP_BLOCKED_MSG = "Jendela login Google diblokir browser. Izinkan popup untuk situs ini, lalu coba lagi.";
   const SHEETS_BUSY_MSG = "Sync atau reset sedang berjalan di tab lain. Tunggu hingga selesai.";
+  const LOGIN_CLOSED_MSG = "Sync dibatalkan karena login Google ditutup sebelum selesai. Tekan Sync lagi untuk mencoba ulang.";
+  const RESET_LOGIN_CLOSED_MSG = "Reset dibatalkan karena login Google ditutup sebelum selesai. Tekan Reset Ekspor lagi untuk mencoba ulang.";
 
   const getSheetsToken = async (): Promise<string> => {
     let token = localStorage.getItem("qicau_sheets_token");
@@ -125,6 +127,7 @@ export default function App() {
     } catch (e: any) {
       if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
         console.log("Login popup closed by user");
+        showToast(LOGIN_CLOSED_MSG, 'error');
         return;
       }
       if (e.code === 'auth/popup-blocked') {
@@ -183,6 +186,7 @@ export default function App() {
     } catch (e: any) {
       if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
         console.log("Login popup closed by user");
+        showToast(RESET_LOGIN_CLOSED_MSG, 'error');
         return;
       }
       if (e.code === 'auth/popup-blocked') {
