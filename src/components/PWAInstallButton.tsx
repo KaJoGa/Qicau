@@ -12,13 +12,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   variant = "header",
   className = "",
 }) => {
-  const { isInstallable, isInstalled, isIOS, isIOSSafari, install } = usePWAInstall();
+  const { isInstallable, isIOS, isIOSSafari, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
-  // If already running as an installed PWA in standalone mode, hide
-  if (isInstalled) {
-    return null;
-  }
 
   const handleInstallClick = async () => {
     if (isInstallable) {

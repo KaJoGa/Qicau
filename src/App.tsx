@@ -497,10 +497,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="space-y-3 pt-2">
-                      <label className="text-sm font-semibold text-neutral-500 dark:text-neutral-400">Aplikasi</label>
-                      <PWAInstallButton variant="settings" />
-                    </div>
                   </div>
                 </div>
                 
