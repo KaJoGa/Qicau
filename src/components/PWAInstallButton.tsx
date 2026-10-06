@@ -6,17 +6,23 @@ import { usePWAInstall } from "../lib/usePWAInstall";
 interface PWAInstallButtonProps {
   variant?: "header" | "settings" | "banner";
   className?: string;
+  onAlreadyInstalled?: () => void;
 }
 
 export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
   variant = "header",
   className = "",
+  onAlreadyInstalled,
 }) => {
-  const { isInstallable, isIOS, isIOSSafari, install } = usePWAInstall();
+  const { isInstallable, isInstalled, isIOS, isIOSSafari, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
 
 
   const handleInstallClick = async () => {
+    if (isInstalled) {
+      onAlreadyInstalled?.();
+      return;
+    }
     if (isInstallable) {
       await install();
     } else if (isIOS) {

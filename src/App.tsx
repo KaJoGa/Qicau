@@ -316,7 +316,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-white flex flex-col items-center justify-center p-6 text-center relative overflow-hidden transition-colors">
         <div className="absolute top-4 right-4 z-10">
-          <PWAInstallButton variant="header" />
+          <PWAInstallButton variant="header" onAlreadyInstalled={() => showToast("Aplikasi sudah terpasang.")} />
         </div>
         <OfflineIndicator />
         <PWAUpdatePrompt />
@@ -394,7 +394,7 @@ export default function App() {
             <span className="font-semibold tracking-tight text-lg">Qicau</span>
           </div>
           <div className="flex items-center gap-2 justify-end">
-            <PWAInstallButton variant="header" />
+            <PWAInstallButton variant="header" onAlreadyInstalled={() => showToast("Aplikasi sudah terpasang.")} />
             <button onClick={() => setShowSettings(true)} className="p-2 -mr-2 text-neutral-500 dark:text-neutral-400 hover:text-black dark:hover:text-white transition-colors" title="Pengaturan">
               <Settings className="w-5 h-5" />
             </button>
