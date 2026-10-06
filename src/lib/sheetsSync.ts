@@ -238,6 +238,23 @@ export async function syncToSheets(
       }
     }
 
+    // One read for the legacy-layout check of every existing tab that needs appending
+    // (instead of one read per tab), and one side-table request for the whole year.
+    const tabsNeedingAppend = months.filter(m => (txsToSyncByMonth[m] || []).length > 0).map(m => `${m} ${year}`);
+    const existingToCheck = isNewFile ? [] : tabsNeedingAppend.filter(t => existingTabs.includes(t));
+    const layoutByTab: Record<string, { a1: string; a2: string }> = {};
+    if (existingToCheck.length > 0) {
+      const ranges = existingToCheck.map(t => `ranges=${encodeURIComponent(`'${t}'!A1:A2`)}`).join("&");
+      const checkRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${ranges}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const checkData = await checkRes.json();
+      (checkData.valueRanges || []).forEach((vr: any, i: number) => {
+        layoutByTab[existingToCheck[i]] = { a1: vr.values?.[0]?.[0] || "", a2: vr.values?.[1]?.[0] || "" };
+      });
+    }
+    const sideRequests: any[] = [];
+
     // Process appending for each month in this year that has unsynced TXs
     const newlyCreatedSheets = new Set<string>();
 
@@ -250,34 +267,8 @@ export async function syncToSheets(
       // If tab doesn't exist, create it
       if (!existingTabs.includes(tabName)) {
         log(`Membuat sheet baru untuk ${tabName}...`);
-        const addSheetAndHeader = {
-          requests: [
-            {
-              addSheet: {
-                properties: {
-                  title: tabName,
-                  gridProperties: { frozenRowCount: 1 }
-                }
-              }
-            }
-          ]
-        };
-
-        const updateRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(addSheetAndHeader)
-        });
-
-        if (!updateRes.ok) {
-          const err = await updateRes.json();
-          throw new Error(`Failed to add sheet ${tabName}: ${err.error?.message}`);
-        }
-        const updatedData = await updateRes.json();
-        const newSheetId = updatedData.replies[0].addSheet.properties.sheetId;
+        // Sheet id chosen here so the add and the formatting can go in one batchUpdate.
+        const newSheetId = Math.max(0, ...Object.values(sheetIdMap)) + 1;
         existingTabs.push(tabName);
         sheetIdMap[tabName] = newSheetId;
         newlyCreatedSheets.add(tabName);
@@ -285,6 +276,7 @@ export async function syncToSheets(
         // Layout: Row 1 = header (frozen), Row 2+ = data. Side tables on cols I-J start at row 2.
         const formatReq = {
            requests: [
+             { addSheet: { properties: { sheetId: newSheetId, title: tabName, gridProperties: { frozenRowCount: 1 } } } },
              // Column header at row 1
              {
                updateCells: {
@@ -341,7 +333,7 @@ export async function syncToSheets(
              }
            ]
         };
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        const formatRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
           method: "POST",
           headers: {
              "Authorization": `Bearer ${token}`,
@@ -349,15 +341,15 @@ export async function syncToSheets(
           },
           body: JSON.stringify(formatReq)
         });
+        if (!formatRes.ok) {
+          const err = await formatRes.json();
+          throw new Error(`Failed to add sheet ${tabName}: ${err.error?.message}`);
+        }
       } else {
         // Existing tab — check if it was migrated to the previous (now-deprecated) layout
         // where main table header was pushed to row 3. If so, un-migrate by deleting rows 1-2.
-        const checkRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${tabName}'!A1:A2`, {
-          headers: { "Authorization": `Bearer ${token}` }
-        });
-        const checkData = await checkRes.json();
-        const a1 = checkData.values?.[0]?.[0] || "";
-        const a2 = checkData.values?.[1]?.[0] || "";
+        const a1 = layoutByTab[tabName]?.a1 || "";
+        const a2 = layoutByTab[tabName]?.a2 || "";
         const wasPreviouslyMigrated = a1 === "" && a2.startsWith("Transaksi ");
 
         if (wasPreviouslyMigrated) {
@@ -639,16 +631,7 @@ export async function syncToSheets(
       }
 
       mark(`${tabName}: append baris`);
-      const sideRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(sideReq)
-      });
-      if (!sideRes.ok) {
-         const err = await sideRes.json();
-         console.error("SideReq failed:", err);
-         throw new Error(`SideReq Error: ${err.error?.message || JSON.stringify(err)}`);
-      }
+      sideRequests.push(...sideReq.requests);
 
       // Mark these transactions as synced in Firestore
       txs.forEach(tx => {
@@ -657,6 +640,25 @@ export async function syncToSheets(
         hasUpdatesThisYear = true;
         totalSynced++;
       });
+    }
+
+    if (sideRequests.length > 0) {
+      const sideRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ requests: sideRequests })
+      });
+      if (!sideRes.ok) {
+         const err = await sideRes.json();
+         console.error("SideReq failed:", err);
+         throw new Error(`SideReq Error: ${err.error?.message || JSON.stringify(err)}`);
+      }
+    }
+
+    // F: nothing changed in an existing year, so its Summary is already correct
+    if (!isNewFile && !hasUpdatesThisYear) {
+      log(`Tahun ${year}: tidak ada perubahan, Summary dilewati.`);
+      continue;
     }
 
     // Rebuild Summary Sheet dynamically based on existing month tabs
